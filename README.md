@@ -22,6 +22,18 @@ Repository: https://git.tak.gov/aegorsuch/wearos-windows-bridge
 
 The helper adds the folder to the current user's PATH. It does not modify the system-wide PATH.
 
+## Enable Developer Options and Wireless Debugging
+
+Before pairing, enable the required settings on the watch:
+
+1. Swipe down from the top of the watch screen to open the quick panel.
+2. Tap the **Settings** gear icon, then select **About Watch**.
+3. Select **Software**, then tap **Software Version** repeatedly until the watch displays **Developer mode turned on**.
+4. Return to the main Settings screen and open **Developer Options**. It is usually at the bottom of the list or just below **About Watch**.
+5. Turn on **ADB Debugging**.
+6. Open **Wireless Debugging** and turn it on.
+7. Make sure the watch is connected to a Wi-Fi network.
+
 ## Pair the Watch
 
 On the watch:
