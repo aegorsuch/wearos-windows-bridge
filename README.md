@@ -12,12 +12,22 @@ Repository: https://git.tak.gov/aegorsuch/wearos-windows-bridge
 - Wireless debugging enabled on the watch
 - PowerShell, available by default on supported Windows versions
 
+## New to Batch Files?
+
+A `.bat` file is a small script that Windows runs like a program. To use this helper:
+
+1. Double-click `wearos-windows-bridge.bat` (or right-click it and choose **Open**) to launch it. A black console window will open with a numbered menu.
+2. If Windows shows a **Windows protected your PC** SmartScreen warning, click **More info**, then **Run anyway**. This appears because the file was downloaded from the internet, not because it is unsafe — this repository is hosted on git.tak.gov and has undergone the requisite security scanning.
+3. Type the number of the menu option you want and press Enter. Follow the on-screen prompts.
+4. To type a folder or file path when asked, you can drag the file/folder from File Explorer directly into the console window instead of typing it out.
+5. Press `Ctrl+C` to cancel a running command (such as Live Watch Logs), or close the window at any time to quit.
+
 ## First Run
 
-1. Download and extract scrcpy to a folder on the PC.
+1. Download scrcpy from https://github.com/Genymobile/scrcpy/releases (the `scrcpy-win64` zip from the latest release) and extract it to a folder on the PC.
 2. Run `wearos-windows-bridge.bat`.
-3. Select **1. Setup scrcpy System PATH**.
-4. Enter the path to the folder containing both `scrcpy.exe` and `adb.exe`.
+3. Select **1. Setup scrcpy System Path**.
+4. Drag and drop the folder containing both `scrcpy.exe` and `adb.exe` into the window, or type/paste its path.
 5. Restart any separate Command Prompt windows if necessary.
 
 The helper adds the folder to the current user's PATH. It does not modify the system-wide PATH.
@@ -66,9 +76,17 @@ After connecting, select **5. Sideload an APK File**, then drag an APK file into
 
 The install uses the saved direct ADB connection and disables streamed installation for better reliability over wireless debugging.
 
+## Bulk Sideload an APK to Multiple Watches
+
+Select **6. Bulk Sideload APK (All Connected Devices)** to install one APK across every watch `adb` currently sees in the `device` (authorized) state, without connecting to each one individually first.
+
+Each watch must already be paired with this PC at least once (see **2. First Time Setup**) and have Wireless Debugging turned on while on the same network; already-paired watches are typically auto-discovered by `adb` over mDNS and require no manual Connect step. Run `adb devices` yourself first if you want to confirm which watches will be targeted.
+
+The helper lists every detected serial, then installs the chosen APK to each in turn with the same flags as single-device sideloading (`-r -g --no-streaming`), printing a per-device result and a final success/failure summary.
+
 ## View Live Watch Logs
 
-After connecting, select **6. Live Watch Logs** to stream new log lines to the console while saving them to a timestamped file. Enter an optional keyword to show and save only matching lines, or press Enter to see all logs. Keywords may contain letters, numbers, periods, underscores, and hyphens, such as `weartak` or `takserver.aftakcoe.org`.
+After connecting, select **7. Live Watch Logs** to stream new log lines to the console while saving them to a timestamped file. Enter an optional keyword to show and save only matching lines, or press Enter to see all logs. Keywords may contain letters, numbers, periods, underscores, and hyphens, such as `weartak` or `takserver.aftakcoe.org`.
 
 Reproduce the issue while the stream is running, then press `Ctrl+C` to stop capture and return to the menu.
 
@@ -80,28 +98,26 @@ For example: `10.0.0.169_34419_watch_log_takserver.aftakcoe.org_20260923-211500_
 
 When no keyword is supplied, the filename uses `none`.
 
-The `watch_logs` folder is ignored by Git because logs may contain device, application, or user data. Share a log only after reviewing it for sensitive information.
+The log is written directly to `watch_logs\` as it streams, using a temporary `..._inprogress.txt` name that is renamed to include the end time once capture stops. This means a capture is never stranded elsewhere if the window is closed or the batch job is terminated mid-stream.
+
+The `watch_logs` folder is ignored by Git because logs may contain device, application, or user data. Share a log only after reviewing it for sensitive information. Select **8. Open Logs Folder** from the main menu at any time to open this folder in File Explorer.
 
 ## Reset
 
-Select **7. Reset ADB Server / Clear Status** to:
+Select **9. Reset ADB Server / Clear Status** to:
 
 - Stop the ADB server
 - Clear the saved IP and port values
 - Delete `ip_cache.txt`
 - Clear the local PATH-setup marker
 
-This does not remove the scrcpy folder from the user PATH, unpair the watch, remove installed apps, or delete ADB keys.
+You'll be asked to confirm before anything is cleared. This does not remove the scrcpy folder from the user PATH, unpair the watch, remove installed apps, or delete ADB keys.
 
-## Bulk Sideload an APK to Multiple Watches
+## Report an Issue
 
-Select **8. Bulk Sideload APK (All Connected Devices)** to install one APK across every watch `adb` currently sees in the `device` (authorized) state, without connecting to each one individually first.
+Select **10. Report an Issue** to open a browser to file an issue on GitHub (https://github.com/aegorsuch/wearos-windows-bridge/issues). Enter the step number that had the problem and a description of what happened; the helper pre-fills the issue title and description with your answers.
 
-Each watch must already be paired with this PC at least once (see **2. First Time Setup**) and have Wireless Debugging turned on while on the same network; already-paired watches are typically auto-discovered by `adb` over mDNS and require no manual Connect step. Run `adb devices` yourself first if you want to confirm which watches will be targeted.
-
-The helper lists every detected serial, then installs the chosen APK to each in turn with the same flags as single-device sideloading (`-r -g --no-streaming`), printing a per-device result and a final success/failure summary.
-
-Option **9. Exit** closes the helper without resetting anything.
+Option **11. Exit** closes the helper without resetting anything.
 
 ## Local Files
 
@@ -125,6 +141,14 @@ Confirm that Wireless Debugging and **Pair new device** are open on the watch, t
 ### Connection fails
 
 Use the port from the main Wireless Debugging screen, not the pairing port. Confirm the PC and watch are on the same network.
+
+### Watch shows "unauthorized"
+
+If the watch's screen has an "Allow debugging?" prompt, confirm it there, then reconnect. The helper detects this case and asks if you want to retry.
+
+### "adb server is out of date" or devices behave inconsistently
+
+If another program that bundles its own `adb.exe` is also installed (for example Android Studio), it can start a conflicting adb server on the same port. Close other adb-based tools, or run **9. Reset ADB Server / Clear Status** to force-close every adb.exe process before reconnecting. If pairing fails with a "protocol fault" style error, the helper restarts the adb server for you — reopen "Pair new device" on the watch for a fresh code and port, then select **2. First Time Setup: Pair Watch via Wi-Fi** again. If it keeps failing the same way, an adb.exe process may be stuck in a bad state that a normal server restart can't reach; run **9. Reset ADB Server / Clear Status** to force-kill every adb.exe process, then pair again.
 
 ### Text entry through scrcpy does not save
 
