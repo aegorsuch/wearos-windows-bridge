@@ -54,9 +54,15 @@ After connecting, select **5. Sideload an APK File**, then drag an APK file into
 
 The install uses the saved direct ADB connection and disables streamed installation for better reliability over wireless debugging.
 
+## Capture Watch Logs
+
+After connecting, select **6. Capture Watch Logs**. The helper runs `adb logcat -d` against the saved direct watch connection and writes a timestamped file to `watch_logs`.
+
+The `watch_logs` folder is ignored by Git because logs may contain device, application, or user data. Share a log only after reviewing it for sensitive information.
+
 ## Reset
 
-Select **6. Reset ADB Server / Clear Status** to:
+Select **7. Reset ADB Server / Clear Status** to:
 
 - Stop the ADB server
 - Clear the saved IP and port values
@@ -65,7 +71,7 @@ Select **6. Reset ADB Server / Clear Status** to:
 
 This does not remove the scrcpy folder from the user PATH, unpair the watch, remove installed apps, or delete ADB keys.
 
-Option **7. Exit** closes the helper without resetting anything.
+Option **8. Exit** closes the helper without resetting anything.
 
 ## Local Files
 

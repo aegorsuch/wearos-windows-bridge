@@ -52,19 +52,21 @@ echo  2. First Time Setup: Pair Watch via Wi-Fi!STEP1_STATUS!
 echo  3. Connect to Watch!STEP2_STATUS!
 echo  4. Launch Screen Mirroring
 echo  5. Sideload an APK File
-echo  6. Reset ADB Server / Clear Status
-echo  7. Exit
+echo  6. Capture Watch Logs
+echo  7. Reset ADB Server / Clear Status
+echo  8. Exit
 echo ===================================================
 set "choice="
-set /p choice="Select an option (1-7): "
+set /p choice="Select an option (1-8): "
 
 if "%choice%"=="1" goto SETUP_PATH
 if "%choice%"=="2" goto PAIR
 if "%choice%"=="3" goto CONNECT
 if "%choice%"=="4" goto MIRROR
 if "%choice%"=="5" goto SIDELOAD
-if "%choice%"=="6" goto RESET
-if "%choice%"=="7" exit
+if "%choice%"=="6" goto LOGS
+if "%choice%"=="7" goto RESET
+if "%choice%"=="8" exit
 goto MENU
 
 :SETUP_PATH
@@ -298,6 +300,37 @@ if exist "%~dp0ip_cache.txt" del "%~dp0ip_cache.txt"
 if exist "%~dp0path_configured.txt" del "%~dp0path_configured.txt"
 echo Done!
 timeout /t 2 >nul
+goto MENU
+
+:LOGS
+cls
+echo CAPTURE WATCH LOGS
+echo ---------------------------------------------------
+if "!SAVED_IP!"=="None" (
+    echo No saved watch connection. Connect to the watch first.
+    echo.
+    pause
+    goto MENU
+)
+if "!SAVED_CONN_PORT!"=="" (
+    echo No saved connection port. Connect to the watch first.
+    echo.
+    pause
+    goto MENU
+)
+if not exist "%~dp0watch_logs" mkdir "%~dp0watch_logs"
+for /f "delims=" %%T in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "LOG_TIMESTAMP=%%T"
+set "LOG_FILE=%~dp0watch_logs\watch-log-!LOG_TIMESTAMP!.txt"
+echo Capturing logs from !SAVED_IP!:!SAVED_CONN_PORT!...
+adb -s "!SAVED_IP!:!SAVED_CONN_PORT!" logcat -d > "!LOG_FILE!" 2>&1
+if errorlevel 1 (
+    echo Log capture failed. See the ADB output above for details.
+) else (
+    echo Logs saved to:
+    echo !LOG_FILE!
+)
+echo.
+pause
 goto MENU
 
 :SAVE_CACHE
