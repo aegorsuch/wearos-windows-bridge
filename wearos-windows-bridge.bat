@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableDelayedExpansion
-title Galaxy Watch Ultra ADB Helper
+title WearOS Windows Bridge
 color 0A
 chdir /d "%~dp0"
 
@@ -45,7 +45,7 @@ if not "!SAVED_CONN_PORT!"=="" (
 )
 
 echo ===================================================
-echo         GALAXY WATCH ULTRA ADB HELPER
+echo             WEAROS WINDOWS BRIDGE
 echo ===================================================
 echo  1. Setup scrcpy System PATH!STEP0_STATUS!
 echo  2. First Time Setup: Pair Watch via Wi-Fi!STEP1_STATUS!
@@ -131,8 +131,17 @@ goto MENU
 cls
 echo PAIRING WATCH
 echo ---------------------------------------------------
-echo 1. On watch: Developer Options - Wireless Debugging
-echo 2. Tap Pair new device
+echo Before pairing, enable these settings on the watch:
+echo 1. Swipe down from the top and open Settings.
+echo 2. Select About Watch - Software.
+echo 3. Tap Software Version repeatedly until you see:
+echo    Developer mode turned on
+echo 4. Return to Settings and open Developer Options.
+echo 5. Turn on ADB Debugging.
+echo 6. Open Wireless Debugging and turn it on.
+echo 7. Make sure the watch is connected to Wi-Fi.
+echo.
+echo In Wireless Debugging, tap Pair new device.
 echo.
 set /p watch_ip="Enter Watch IP Address (e.g., 10.0.0.169): "
 set "CHECK_IP=!watch_ip!"
