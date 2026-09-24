@@ -60,9 +60,15 @@ After connecting, select **6. Capture Watch Logs**. The helper runs `adb logcat 
 
 The `watch_logs` folder is ignored by Git because logs may contain device, application, or user data. Share a log only after reviewing it for sensitive information.
 
+## View Live Watch Logs
+
+Select **7. Live Watch Logs** to stream new log lines to the console while saving them to a timestamped file. Enter an optional keyword to show and save only matching lines, or press Enter to see all logs.
+
+Reproduce the issue while the stream is running, then press `Ctrl+C` to stop capture and return to the menu.
+
 ## Reset
 
-Select **7. Reset ADB Server / Clear Status** to:
+Select **8. Reset ADB Server / Clear Status** to:
 
 - Stop the ADB server
 - Clear the saved IP and port values
@@ -71,7 +77,7 @@ Select **7. Reset ADB Server / Clear Status** to:
 
 This does not remove the scrcpy folder from the user PATH, unpair the watch, remove installed apps, or delete ADB keys.
 
-Option **8. Exit** closes the helper without resetting anything.
+Option **9. Exit** closes the helper without resetting anything.
 
 ## Local Files
 

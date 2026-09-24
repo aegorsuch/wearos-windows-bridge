@@ -53,11 +53,12 @@ echo  3. Connect to Watch!STEP2_STATUS!
 echo  4. Launch Screen Mirroring
 echo  5. Sideload an APK File
 echo  6. Capture Watch Logs
-echo  7. Reset ADB Server / Clear Status
-echo  8. Exit
+echo  7. Live Watch Logs
+echo  8. Reset ADB Server / Clear Status
+echo  9. Exit
 echo ===================================================
 set "choice="
-set /p choice="Select an option (1-8): "
+set /p choice="Select an option (1-9): "
 
 if "%choice%"=="1" goto SETUP_PATH
 if "%choice%"=="2" goto PAIR
@@ -65,8 +66,9 @@ if "%choice%"=="3" goto CONNECT
 if "%choice%"=="4" goto MIRROR
 if "%choice%"=="5" goto SIDELOAD
 if "%choice%"=="6" goto LOGS
-if "%choice%"=="7" goto RESET
-if "%choice%"=="8" exit
+if "%choice%"=="7" goto LIVE_LOGS
+if "%choice%"=="8" goto RESET
+if "%choice%"=="9" exit
 goto MENU
 
 :SETUP_PATH
@@ -348,6 +350,45 @@ if errorlevel 1 (
     echo !LOG_FILE!
 )
 echo.
+pause
+goto MENU
+
+:LIVE_LOGS
+cls
+echo LIVE WATCH LOGS
+echo ---------------------------------------------------
+if "!SAVED_IP!"=="None" (
+    echo No saved watch connection. Connect to the watch first.
+    echo.
+    pause
+    goto MENU
+)
+if "!SAVED_CONN_PORT!"=="" (
+    echo No saved connection port. Connect to the watch first.
+    echo.
+    pause
+    goto MENU
+)
+if not exist "%~dp0watch_logs" mkdir "%~dp0watch_logs"
+for /f "delims=" %%T in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "LOG_TIMESTAMP=%%T"
+set "LIVE_LOG_FILE=%~dp0watch_logs\watch-live-!LOG_TIMESTAMP!.txt"
+set "LOG_SERIAL=!SAVED_IP!:!SAVED_CONN_PORT!"
+set "LOG_FILTER="
+set /p LOG_FILTER="Optional keyword filter (press ENTER for all logs): "
+set "CHECK_FILTER=!LOG_FILTER!"
+powershell.exe -NoProfile -Command "if ($env:CHECK_FILTER -match '[&|<>^]') { exit 1 }" >nul
+if errorlevel 1 (
+    echo Log filter contains unsupported command characters.
+    pause
+    goto MENU
+)
+echo Streaming logs from !LOG_SERIAL!...
+echo Press Ctrl+C to stop and return to the menu.
+echo.
+powershell.exe -NoProfile -Command "& adb.exe -s $env:LOG_SERIAL logcat -v time | ForEach-Object { if ([string]::IsNullOrWhiteSpace($env:LOG_FILTER) -or $_.ToString().IndexOf($env:LOG_FILTER, [StringComparison]::OrdinalIgnoreCase) -ge 0) { Add-Content -Path $env:LIVE_LOG_FILE -Value $_; Write-Output $_ } }"
+echo.
+echo Live log capture saved to:
+echo !LIVE_LOG_FILE!
 pause
 goto MENU
 
