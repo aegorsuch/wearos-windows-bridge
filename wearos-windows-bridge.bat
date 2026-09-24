@@ -52,23 +52,21 @@ echo  2. First Time Setup: Pair Watch via Wi-Fi!STEP1_STATUS!
 echo  3. Connect to Watch!STEP2_STATUS!
 echo  4. Launch Screen Mirroring
 echo  5. Sideload an APK File
-echo  6. Capture Watch Logs
-echo  7. Live Watch Logs
-echo  8. Reset ADB Server / Clear Status
-echo  9. Exit
+echo  6. Live Watch Logs
+echo  7. Reset ADB Server / Clear Status
+echo  8. Exit
 echo ===================================================
 set "choice="
-set /p choice="Select an option (1-9): "
+set /p choice="Select an option (1-8): "
 
 if "%choice%"=="1" goto SETUP_PATH
 if "%choice%"=="2" goto PAIR
 if "%choice%"=="3" goto CONNECT
 if "%choice%"=="4" goto MIRROR
 if "%choice%"=="5" goto SIDELOAD
-if "%choice%"=="6" goto LOGS
-if "%choice%"=="7" goto LIVE_LOGS
-if "%choice%"=="8" goto RESET
-if "%choice%"=="9" exit
+if "%choice%"=="6" goto LIVE_LOGS
+if "%choice%"=="7" goto RESET
+if "%choice%"=="8" exit
 goto MENU
 
 :SETUP_PATH
@@ -304,55 +302,6 @@ echo Done!
 timeout /t 2 >nul
 goto MENU
 
-:LOGS
-cls
-echo CAPTURE WATCH LOGS
-echo ---------------------------------------------------
-if "!SAVED_IP!"=="None" (
-    echo No saved watch connection. Connect to the watch first.
-    echo.
-    pause
-    goto MENU
-)
-if "!SAVED_CONN_PORT!"=="" (
-    echo No saved connection port. Connect to the watch first.
-    echo.
-    pause
-    goto MENU
-)
-if not exist "%~dp0watch_logs" mkdir "%~dp0watch_logs"
-for /f "delims=" %%T in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "LOG_TIMESTAMP=%%T"
-set "LOG_FILE=%~dp0watch_logs\watch-log-!LOG_TIMESTAMP!.txt"
-set "LOG_FILTER="
-set /p LOG_FILTER="Optional keyword filter (press ENTER for all logs): "
-set "CHECK_FILTER=!LOG_FILTER!"
-powershell.exe -NoProfile -Command "if ($env:CHECK_FILTER -match '[&|<>^]') { exit 1 }" >nul
-if errorlevel 1 (
-    echo Log filter contains unsupported command characters.
-    pause
-    goto MENU
-)
-set "RAW_LOG_FILE=%TEMP%\wearos-watch-log-!LOG_TIMESTAMP!.txt"
-echo Capturing logs from !SAVED_IP!:!SAVED_CONN_PORT!...
-adb -s "!SAVED_IP!:!SAVED_CONN_PORT!" logcat -d > "!RAW_LOG_FILE!" 2>&1
-if errorlevel 1 (
-    if exist "!RAW_LOG_FILE!" del "!RAW_LOG_FILE!"
-    echo Log capture failed. See the ADB output above for details.
-) else (
-    if "!LOG_FILTER!"=="" (
-        move /y "!RAW_LOG_FILE!" "!LOG_FILE!" >nul
-    ) else (
-        findstr /i /c:"!LOG_FILTER!" "!RAW_LOG_FILE!" > "!LOG_FILE!"
-        del "!RAW_LOG_FILE!"
-        if errorlevel 1 echo No log lines matched "!LOG_FILTER!".
-    )
-    echo Logs saved to:
-    echo !LOG_FILE!
-)
-echo.
-pause
-goto MENU
-
 :LIVE_LOGS
 cls
 echo LIVE WATCH LOGS
@@ -370,22 +319,26 @@ if "!SAVED_CONN_PORT!"=="" (
     goto MENU
 )
 if not exist "%~dp0watch_logs" mkdir "%~dp0watch_logs"
-for /f "delims=" %%T in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "LOG_TIMESTAMP=%%T"
-set "LIVE_LOG_FILE=%~dp0watch_logs\watch-live-!LOG_TIMESTAMP!.txt"
+for /f "delims=" %%T in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "LOG_START=%%T"
+set "LIVE_TEMP_FILE=%TEMP%\wearos-watch-live-!LOG_START!.txt"
 set "LOG_SERIAL=!SAVED_IP!:!SAVED_CONN_PORT!"
 set "LOG_FILTER="
 set /p LOG_FILTER="Optional keyword filter (press ENTER for all logs): "
 set "CHECK_FILTER=!LOG_FILTER!"
-powershell.exe -NoProfile -Command "if ($env:CHECK_FILTER -match '[&|<>^]') { exit 1 }" >nul
+powershell.exe -NoProfile -Command "if ($env:CHECK_FILTER -notmatch '^[A-Za-z0-9._-]*$') { exit 1 }" >nul
 if errorlevel 1 (
-    echo Log filter contains unsupported command characters.
+    echo Log filter may contain only letters, numbers, periods, underscores, and hyphens.
     pause
     goto MENU
 )
 echo Streaming logs from !LOG_SERIAL!...
 echo Press Ctrl+C to stop and return to the menu.
 echo.
-powershell.exe -NoProfile -Command "& adb.exe -s $env:LOG_SERIAL logcat -v time | ForEach-Object { if ([string]::IsNullOrWhiteSpace($env:LOG_FILTER) -or $_.ToString().IndexOf($env:LOG_FILTER, [StringComparison]::OrdinalIgnoreCase) -ge 0) { Add-Content -Path $env:LIVE_LOG_FILE -Value $_; Write-Output $_ } }"
+powershell.exe -NoProfile -Command "& adb.exe -s $env:LOG_SERIAL logcat -v time | ForEach-Object { if ([string]::IsNullOrWhiteSpace($env:LOG_FILTER) -or $_.ToString().IndexOf($env:LOG_FILTER, [StringComparison]::OrdinalIgnoreCase) -ge 0) { Add-Content -Path $env:LIVE_TEMP_FILE -Value $_; Write-Output $_ } }"
+for /f "delims=" %%T in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "LOG_END=%%T"
+if "!LOG_FILTER!"=="" set "LOG_FILTER=none"
+set "LIVE_LOG_FILE=%~dp0watch_logs\!SAVED_IP!_!SAVED_CONN_PORT!_watch_log_!LOG_FILTER!_!LOG_START!_!LOG_END!.txt"
+if exist "!LIVE_TEMP_FILE!" move /y "!LIVE_TEMP_FILE!" "!LIVE_LOG_FILE!" >nul
 echo.
 echo Live log capture saved to:
 echo !LIVE_LOG_FILE!

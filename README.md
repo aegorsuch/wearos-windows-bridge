@@ -54,21 +54,25 @@ After connecting, select **5. Sideload an APK File**, then drag an APK file into
 
 The install uses the saved direct ADB connection and disables streamed installation for better reliability over wireless debugging.
 
-## Capture Watch Logs
-
-After connecting, select **6. Capture Watch Logs**. The helper runs `adb logcat -d` against the saved direct watch connection and writes a timestamped file to `watch_logs`. You can optionally enter a case-insensitive keyword filter, such as `weartak` or `takserver.aftakcoe.org`; press Enter without a filter to save all logs.
-
-The `watch_logs` folder is ignored by Git because logs may contain device, application, or user data. Share a log only after reviewing it for sensitive information.
-
 ## View Live Watch Logs
 
-Select **7. Live Watch Logs** to stream new log lines to the console while saving them to a timestamped file. Enter an optional keyword to show and save only matching lines, or press Enter to see all logs.
+After connecting, select **6. Live Watch Logs** to stream new log lines to the console while saving them to a timestamped file. Enter an optional keyword to show and save only matching lines, or press Enter to see all logs. Keywords may contain letters, numbers, periods, underscores, and hyphens, such as `weartak` or `takserver.aftakcoe.org`.
 
 Reproduce the issue while the stream is running, then press `Ctrl+C` to stop capture and return to the menu.
 
+Log filenames use this format:
+
+`ip_port_watch_log_keyword_startdatetime_enddatetime.txt`
+
+For example: `10.0.0.169_34419_watch_log_takserver.aftakcoe.org_20260923-211500_20260923-211745.txt`.
+
+When no keyword is supplied, the filename uses `none`.
+
+The `watch_logs` folder is ignored by Git because logs may contain device, application, or user data. Share a log only after reviewing it for sensitive information.
+
 ## Reset
 
-Select **8. Reset ADB Server / Clear Status** to:
+Select **7. Reset ADB Server / Clear Status** to:
 
 - Stop the ADB server
 - Clear the saved IP and port values
@@ -77,7 +81,7 @@ Select **8. Reset ADB Server / Clear Status** to:
 
 This does not remove the scrcpy folder from the user PATH, unpair the watch, remove installed apps, or delete ADB keys.
 
-Option **9. Exit** closes the helper without resetting anything.
+Option **8. Exit** closes the helper without resetting anything.
 
 ## Local Files
 
