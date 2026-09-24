@@ -66,6 +66,8 @@ Pairing and connection use different ports. The pairing port is shown after sele
 
 The helper saves the IP address and connection ports in `ip_cache.txt`. This file is local-only and is ignored by Git.
 
+If the first connection attempt is stale, offline, or waiting for watch approval, the helper retries up to three times. It restarts its local ADB server once during recovery and preserves the previous saved connection if all attempts fail.
+
 ## Screen Mirroring
 
 After connecting, select **4. Launch Screen Mirroring**. The helper passes the saved `IP:connection-port` to scrcpy so duplicate ADB entries, including mDNS entries, do not cause an ambiguous-device error.
@@ -111,13 +113,17 @@ Select **9. Reset ADB Server / Clear Status** to:
 - Delete `ip_cache.txt`
 - Clear the local PATH-setup marker
 
-You'll be asked to confirm before anything is cleared. This does not remove the scrcpy folder from the user PATH, unpair the watch, remove installed apps, or delete ADB keys.
+You'll be asked to type `CONFIRM` before anything is cleared. The reset targets the ADB process associated with the helper's configured `adb.exe`; it does not remove the scrcpy folder from the user PATH, unpair the watch, remove installed apps, or delete ADB keys.
+
+## Diagnose and Export Support Data
+
+Select **10. Diagnose Environment** to check the local ADB and scrcpy setup, PATH visibility, and detected device states. Select **11. Export Diagnostic Bundle** to create a zip containing environment details, ADB state, saved connection metadata, and local logs for troubleshooting. Review the contents for sensitive information before sharing the zip.
 
 ## Report an Issue
 
-Select **10. Report an Issue** to open a browser to file an issue on GitHub (https://github.com/aegorsuch/wearos-windows-bridge/issues). Enter the step number that had the problem and a description of what happened; the helper pre-fills the issue title and description with your answers.
+Select **12. Report an Issue** to open a browser to file an issue on GitHub (https://github.com/aegorsuch/wearos-windows-bridge/issues). Enter the step number that had the problem and a description of what happened; the helper pre-fills the issue title and description with your answers.
 
-Option **11. Exit** closes the helper without resetting anything.
+Option **13. Exit** closes the helper without resetting anything.
 
 ## Local Files
 
@@ -148,7 +154,7 @@ If the watch's screen has an "Allow debugging?" prompt, confirm it there, then r
 
 ### "adb server is out of date" or devices behave inconsistently
 
-If another program that bundles its own `adb.exe` is also installed (for example Android Studio), it can start a conflicting adb server on the same port. Close other adb-based tools, or run **9. Reset ADB Server / Clear Status** to force-close every adb.exe process before reconnecting. If pairing fails with a "protocol fault" style error, the helper restarts the adb server for you — reopen "Pair new device" on the watch for a fresh code and port, then select **2. First Time Setup: Pair Watch via Wi-Fi** again. If it keeps failing the same way, an adb.exe process may be stuck in a bad state that a normal server restart can't reach; run **9. Reset ADB Server / Clear Status** to force-kill every adb.exe process, then pair again.
+If another program that bundles its own `adb.exe` is also installed (for example Android Studio), it can start a conflicting adb server on the same port. Close other adb-based tools, or run **9. Reset ADB Server / Clear Status** to stop the ADB process associated with this helper before reconnecting. If pairing fails with a "protocol fault" style error, the helper restarts the adb server for you — reopen "Pair new device" on the watch for a fresh code and port, then select **2. First Time Setup: Pair Watch via Wi-Fi** again. If it keeps failing the same way, use the reset option and pair again.
 
 ### Text entry through scrcpy does not save
 
