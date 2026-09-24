@@ -321,11 +321,29 @@ if "!SAVED_CONN_PORT!"=="" (
 if not exist "%~dp0watch_logs" mkdir "%~dp0watch_logs"
 for /f "delims=" %%T in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "LOG_TIMESTAMP=%%T"
 set "LOG_FILE=%~dp0watch_logs\watch-log-!LOG_TIMESTAMP!.txt"
-echo Capturing logs from !SAVED_IP!:!SAVED_CONN_PORT!...
-adb -s "!SAVED_IP!:!SAVED_CONN_PORT!" logcat -d > "!LOG_FILE!" 2>&1
+set "LOG_FILTER="
+set /p LOG_FILTER="Optional keyword filter (press ENTER for all logs): "
+set "CHECK_FILTER=!LOG_FILTER!"
+powershell.exe -NoProfile -Command "if ($env:CHECK_FILTER -match '[&|<>^]') { exit 1 }" >nul
 if errorlevel 1 (
+    echo Log filter contains unsupported command characters.
+    pause
+    goto MENU
+)
+set "RAW_LOG_FILE=%TEMP%\wearos-watch-log-!LOG_TIMESTAMP!.txt"
+echo Capturing logs from !SAVED_IP!:!SAVED_CONN_PORT!...
+adb -s "!SAVED_IP!:!SAVED_CONN_PORT!" logcat -d > "!RAW_LOG_FILE!" 2>&1
+if errorlevel 1 (
+    if exist "!RAW_LOG_FILE!" del "!RAW_LOG_FILE!"
     echo Log capture failed. See the ADB output above for details.
 ) else (
+    if "!LOG_FILTER!"=="" (
+        move /y "!RAW_LOG_FILE!" "!LOG_FILE!" >nul
+    ) else (
+        findstr /i /c:"!LOG_FILTER!" "!RAW_LOG_FILE!" > "!LOG_FILE!"
+        del "!RAW_LOG_FILE!"
+        if errorlevel 1 echo No log lines matched "!LOG_FILTER!".
+    )
     echo Logs saved to:
     echo !LOG_FILE!
 )

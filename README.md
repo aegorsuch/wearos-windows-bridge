@@ -56,7 +56,7 @@ The install uses the saved direct ADB connection and disables streamed installat
 
 ## Capture Watch Logs
 
-After connecting, select **6. Capture Watch Logs**. The helper runs `adb logcat -d` against the saved direct watch connection and writes a timestamped file to `watch_logs`.
+After connecting, select **6. Capture Watch Logs**. The helper runs `adb logcat -d` against the saved direct watch connection and writes a timestamped file to `watch_logs`. You can optionally enter a case-insensitive keyword filter, such as `weartak` or `takserver.aftakcoe.org`; press Enter without a filter to save all logs.
 
 The `watch_logs` folder is ignored by Git because logs may contain device, application, or user data. Share a log only after reviewing it for sensitive information.
 
