@@ -221,6 +221,11 @@ set "SAVED_CONN_PORT=!conn_port!"
 call :SAVE_CACHE
 
 pause
+if not "!CONNECT_RETURN!"=="" (
+    set "RETURN_TARGET=!CONNECT_RETURN!"
+    set "CONNECT_RETURN="
+    goto !RETURN_TARGET!
+)
 goto MENU
 
 :MIRROR
@@ -237,6 +242,13 @@ if "!SAVED_CONN_PORT!"=="" (
     echo No saved connection port. Connect to the watch first.
     echo.
     pause
+    goto MENU
+)
+echo Checking connection to !SAVED_IP!:!SAVED_CONN_PORT!...
+call :CHECK_CONNECTION
+if "!CONN_OK!"=="0" (
+    set "CONNECT_RETURN=MIRROR"
+    call :OFFER_RECONNECT
     goto MENU
 )
 echo Running stream...
@@ -262,7 +274,14 @@ if "!SAVED_CONN_PORT!"=="" (
     pause
     goto MENU
 )
-echo Drag and drop your APK file here, then press ENTER.
+echo Checking connection to !SAVED_IP!:!SAVED_CONN_PORT!...
+call :CHECK_CONNECTION
+if "!CONN_OK!"=="0" (
+    set "CONNECT_RETURN=SIDELOAD"
+    call :OFFER_RECONNECT
+    goto MENU
+)
+
 echo.
 set /p apk_path="APK Path: "
 set "apk_path=!apk_path:"=!"
@@ -351,4 +370,22 @@ goto MENU
     echo(!SAVED_PAIR_PORT!
     echo(!SAVED_CONN_PORT!
 ) > "%~dp0ip_cache.txt"
+exit /b
+
+:CHECK_CONNECTION
+set "CONN_STATE="
+for /f "usebackq delims=" %%S in (`adb -s "!SAVED_IP!:!SAVED_CONN_PORT!" get-state 2^>nul`) do set "CONN_STATE=%%S"
+if "!CONN_STATE!"=="device" (set "CONN_OK=1") else (set "CONN_OK=0")
+exit /b
+
+:OFFER_RECONNECT
+echo.
+echo Saved connection !SAVED_IP!:!SAVED_CONN_PORT! is stale or unreachable.
+echo The watch's wireless debugging port likely changed since last time.
+echo.
+set "reconnect_choice="
+set /p reconnect_choice="Reconnect now? (Y/N): "
+if /i "!reconnect_choice!"=="Y" goto CONNECT
+set "CONNECT_RETURN="
+pause
 exit /b
