@@ -47,45 +47,55 @@ if not "!SAVED_CONN_PORT!"=="" (
 echo ===================================================
 echo             WEAROS WINDOWS BRIDGE
 echo ===================================================
-echo  1. Setup scrcpy System PATH!STEP0_STATUS!
+echo  1. Setup scrcpy System Path!STEP0_STATUS!
 echo  2. First Time Setup: Pair Watch via Wi-Fi!STEP1_STATUS!
 echo  3. Connect to Watch!STEP2_STATUS!
 echo  4. Launch Screen Mirroring
 echo  5. Sideload an APK File
-echo  6. Live Watch Logs
-echo  7. Reset ADB Server / Clear Status
-echo  8. Bulk Sideload APK (All Connected Devices)
-echo  9. Exit
+echo  6. Bulk Sideload APK (All Connected Devices)
+echo  7. Live Watch Logs
+echo  8. Open Logs Folder
+echo  9. Reset ADB Server / Clear Status
+echo 10. Report an Issue
+echo 11. Exit
 echo ===================================================
 set "choice="
-set /p choice="Select an option (1-9): "
+set /p choice="Select an option (1-11): "
 
 if "%choice%"=="1" goto SETUP_PATH
 if "%choice%"=="2" goto PAIR
 if "%choice%"=="3" goto CONNECT
 if "%choice%"=="4" goto MIRROR
 if "%choice%"=="5" goto SIDELOAD
-if "%choice%"=="6" goto LIVE_LOGS
-if "%choice%"=="7" goto RESET
-if "%choice%"=="8" goto BULK_SIDELOAD
-if "%choice%"=="9" exit
+if "%choice%"=="6" goto BULK_SIDELOAD
+if "%choice%"=="7" goto LIVE_LOGS
+if "%choice%"=="8" goto OPEN_LOGS_FOLDER
+if "%choice%"=="9" goto RESET
+if "%choice%"=="10" goto REPORT_ISSUE
+if "%choice%"=="11" exit
 goto MENU
 
 :SETUP_PATH
 cls
 echo SETUP SCRCPY SYSTEM PATH
 echo ---------------------------------------------------
+echo Download scrcpy (includes adb.exe) from:
+echo https://github.com/Genymobile/scrcpy/releases
+echo Grab the "scrcpy-win64" zip from the latest release.
+echo.
 echo Instructions:
 echo 1. Extract scrcpy anywhere on your PC (e.g., C:\Tools\scrcpy-win64).
-echo 2. Paste the full folder path below to automatically add it to your
-echo    Windows User PATH environment variable.
+echo 2. Drag and drop the extracted folder here, or paste its full path,
+echo    to automatically add it to your Windows User PATH environment
+echo    variable.
 echo.
 echo Manual Steps (If preferred):
 echo - Press Windows Key, type 'env', and open Environment Variables.
 echo - Under User Variables, edit 'Path', click New, and paste folder path.
 echo ---------------------------------------------------
 echo.
-set /p user_scrcpy_path="Enter full path to scrcpy folder (e.g., C:\Tools\scrcpy-win64): "
+set /p user_scrcpy_path="Drag & drop or enter full path to scrcpy folder (e.g., C:\Tools\scrcpy-win64): "
+set "user_scrcpy_path=!user_scrcpy_path:"=!"
 
 if not exist "!user_scrcpy_path!\scrcpy.exe" (
     echo.
@@ -170,13 +180,45 @@ if errorlevel 1 (
     goto MENU
 )
 echo.
-adb pair !watch_ip!:!pair_port! !pair_code!
+set "PAIR_LOG=%TEMP%\wearos-pair-!RANDOM!.txt"
+adb pair !watch_ip!:!pair_port! !pair_code! > "!PAIR_LOG!" 2>&1
+set "PAIR_RESULT=!errorlevel!"
+type "!PAIR_LOG!"
 echo.
-if errorlevel 1 (
+if not "!PAIR_RESULT!"=="0" (
     echo Pairing failed. Nothing was saved.
+    set "PAIR_STALE_HINT=0"
+    findstr /i /c:"protocol fault" "!PAIR_LOG!" >nul
+    if not errorlevel 1 set "PAIR_STALE_HINT=1"
+    set "PAIR_NET_HINT=0"
+    findstr /i /c:"failed to connect" /c:"connection refused" /c:"no route to host" /c:"connection timed out" "!PAIR_LOG!" >nul
+    if not errorlevel 1 set "PAIR_NET_HINT=1"
+    if "!PAIR_STALE_HINT!"=="1" (
+        echo.
+        echo This is usually caused by a stale or mismatched adb server left running
+        echo by another program such as Android Studio's bundled adb, or by a
+        echo pairing code/port that expired or was already used.
+        echo Restarting the adb server now so the next attempt starts clean...
+        adb kill-server >nul 2>nul
+        taskkill /F /IM adb.exe >nul 2>nul
+        echo Done. Select "Pair Watch via Wi-Fi" again to retry - on the watch,
+        echo reopen "Pair new device" first for a fresh code and port.
+        echo.
+        echo If it keeps failing with the SAME "protocol fault" error even with a
+        echo fresh code, an adb.exe process may be stuck in a bad state that a
+        echo normal kill-server can't reach. Try option 9 "Reset ADB Server /
+        echo Clear Status" to force-close every adb.exe process, then pair again.
+    )
+    if "!PAIR_NET_HINT!"=="1" (
+        echo.
+        echo This usually means the IP address or pairing port is wrong, or the
+        echo watch and PC are not on the same Wi-Fi network.
+    )
+    del "!PAIR_LOG!" >nul 2>nul
     pause
     goto MENU
 )
+del "!PAIR_LOG!" >nul 2>nul
 set "SAVED_IP=!watch_ip!"
 set "SAVED_PAIR_PORT=!pair_port!"
 call :SAVE_CACHE
@@ -220,15 +262,20 @@ if errorlevel 1 (
     goto MENU
 )
 echo.
+set "PREV_SAVED_IP=!SAVED_IP!"
+set "PREV_SAVED_CONN_PORT=!SAVED_CONN_PORT!"
 adb connect !watch_ip!:!conn_port!
 echo.
-if errorlevel 1 (
+set "SAVED_IP=!watch_ip!"
+set "SAVED_CONN_PORT=!conn_port!"
+call :CHECK_CONNECTION
+if "!CONN_OK!"=="0" (
     echo Connection failed. Nothing was saved.
+    set "SAVED_IP=!PREV_SAVED_IP!"
+    set "SAVED_CONN_PORT=!PREV_SAVED_CONN_PORT!"
     pause
     goto MENU
 )
-set "SAVED_IP=!watch_ip!"
-set "SAVED_CONN_PORT=!conn_port!"
 call :SAVE_CACHE
 
 pause
@@ -243,6 +290,21 @@ goto MENU
 cls
 echo LAUNCHING SCRCPY
 echo ---------------------------------------------------
+call :REQUIRE_ADB
+if "!TOOLS_OK!"=="0" (
+    pause
+    goto MENU
+)
+where scrcpy.exe >nul 2>nul
+if errorlevel 1 (
+    echo.
+    echo scrcpy was not found on your PATH. Select "1. Setup scrcpy System Path"
+    echo from the main menu, then try again. Restart this window if you already
+    echo completed setup.
+    echo.
+    pause
+    goto MENU
+)
 if "!SAVED_IP!"=="None" (
     echo No saved watch connection. Connect to the watch first.
     echo.
@@ -273,6 +335,11 @@ goto MENU
 cls
 echo SIDELOAD APK
 echo ---------------------------------------------------
+call :REQUIRE_ADB
+if "!TOOLS_OK!"=="0" (
+    pause
+    goto MENU
+)
 if "!SAVED_IP!"=="None" (
     echo No saved watch connection. Connect to the watch first.
     echo.
@@ -301,6 +368,11 @@ if not exist "!apk_path!" (
     pause
     goto MENU
 )
+if /i not "!apk_path:~-4!"==".apk" (
+    echo WARNING: "!apk_path!" does not end in .apk. Make sure you dragged the correct file.
+    pause
+    goto MENU
+)
 set "CHECK_PATH=!apk_path!"
 powershell.exe -NoProfile -Command "if ($env:CHECK_PATH -match '[&|<>^!]') { exit 1 }" >nul
 if errorlevel 1 (
@@ -322,6 +394,11 @@ goto MENU
 cls
 echo BULK SIDELOAD APK (ALL CONNECTED DEVICES)
 echo ---------------------------------------------------
+call :REQUIRE_ADB
+if "!TOOLS_OK!"=="0" (
+    pause
+    goto MENU
+)
 echo Scanning for connected/authorized devices...
 echo.
 set "BULK_COUNT=0"
@@ -347,6 +424,11 @@ set /p apk_path="APK Path: "
 set "apk_path=!apk_path:"=!"
 if not exist "!apk_path!" (
     echo APK file not found.
+    pause
+    goto MENU
+)
+if /i not "!apk_path:~-4!"==".apk" (
+    echo WARNING: "!apk_path!" does not end in .apk. Make sure you dragged the correct file.
     pause
     goto MENU
 )
@@ -382,8 +464,18 @@ goto MENU
 
 :RESET
 cls
+echo RESET ADB SERVER / CLEAR STATUS
+echo ---------------------------------------------------
+echo This stops the ADB server, clears the saved IP/ports, and deletes
+echo ip_cache.txt and path_configured.txt.
+echo.
+set "reset_confirm="
+set /p reset_confirm="Are you sure? (Y/N): "
+if /i not "!reset_confirm!"=="Y" goto MENU
+echo.
 echo Resetting ADB server and clearing session memory...
-adb kill-server
+adb kill-server >nul 2>nul
+taskkill /F /IM adb.exe >nul 2>nul
 set "SAVED_IP=None"
 set "SAVED_PAIR_PORT="
 set "SAVED_CONN_PORT="
@@ -398,6 +490,11 @@ goto MENU
 cls
 echo LIVE WATCH LOGS
 echo ---------------------------------------------------
+call :REQUIRE_ADB
+if "!TOOLS_OK!"=="0" (
+    pause
+    goto MENU
+)
 if "!SAVED_IP!"=="None" (
     echo No saved watch connection. Connect to the watch first.
     echo.
@@ -412,7 +509,6 @@ if "!SAVED_CONN_PORT!"=="" (
 )
 if not exist "%~dp0watch_logs" mkdir "%~dp0watch_logs"
 for /f "delims=" %%T in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "LOG_START=%%T"
-set "LIVE_TEMP_FILE=%TEMP%\wearos-watch-live-!LOG_START!.txt"
 set "LOG_SERIAL=!SAVED_IP!:!SAVED_CONN_PORT!"
 set "LOG_FILTER="
 set /p LOG_FILTER="Optional keyword filter (press ENTER for all logs): "
@@ -423,19 +519,82 @@ if errorlevel 1 (
     pause
     goto MENU
 )
+if "!LOG_FILTER!"=="" (set "LOG_FILTER_TAG=none") else (set "LOG_FILTER_TAG=!LOG_FILTER!")
+rem write straight to the final logs folder so a capture is never stranded in %TEMP% if interrupted
+set "LIVE_LOG_FILE=%~dp0watch_logs\!SAVED_IP!_!SAVED_CONN_PORT!_watch_log_!LOG_FILTER_TAG!_!LOG_START!_inprogress.txt"
 echo Streaming logs from !LOG_SERIAL!...
 echo Press Ctrl+C to stop and return to the menu.
+echo Logs are being saved live to:
+echo !LIVE_LOG_FILE!
 echo.
-powershell.exe -NoProfile -Command "& adb.exe -s $env:LOG_SERIAL logcat -v time | ForEach-Object { if ([string]::IsNullOrWhiteSpace($env:LOG_FILTER) -or $_.ToString().IndexOf($env:LOG_FILTER, [StringComparison]::OrdinalIgnoreCase) -ge 0) { Add-Content -Path $env:LIVE_TEMP_FILE -Value $_; Write-Output $_ } }"
+powershell.exe -NoProfile -Command "& adb.exe -s $env:LOG_SERIAL logcat -v time | ForEach-Object { if ([string]::IsNullOrWhiteSpace($env:LOG_FILTER) -or $_.ToString().IndexOf($env:LOG_FILTER, [StringComparison]::OrdinalIgnoreCase) -ge 0) { Add-Content -Path $env:LIVE_LOG_FILE -Value $_; Write-Output $_ } }"
 for /f "delims=" %%T in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "LOG_END=%%T"
-if "!LOG_FILTER!"=="" set "LOG_FILTER=none"
-set "LIVE_LOG_FILE=%~dp0watch_logs\!SAVED_IP!_!SAVED_CONN_PORT!_watch_log_!LOG_FILTER!_!LOG_START!_!LOG_END!.txt"
-if exist "!LIVE_TEMP_FILE!" move /y "!LIVE_TEMP_FILE!" "!LIVE_LOG_FILE!" >nul
+set "FINAL_LOG_NAME=!SAVED_IP!_!SAVED_CONN_PORT!_watch_log_!LOG_FILTER_TAG!_!LOG_START!_!LOG_END!.txt"
+if exist "!LIVE_LOG_FILE!" ren "!LIVE_LOG_FILE!" "!FINAL_LOG_NAME!"
 echo.
 echo Live log capture saved to:
-echo !LIVE_LOG_FILE!
+if exist "%~dp0watch_logs\!FINAL_LOG_NAME!" (echo %~dp0watch_logs\!FINAL_LOG_NAME!) else (echo !LIVE_LOG_FILE!)
 pause
 goto MENU
+
+:REPORT_ISSUE
+cls
+echo REPORT AN ISSUE
+echo ---------------------------------------------------
+echo This opens a browser to file an issue on GitHub with your
+echo answers pre-filled into the title and description.
+echo.
+echo Which step had the issue?
+echo  1. Setup scrcpy System Path
+echo  2. Pair Watch via Wi-Fi
+echo  3. Connect to Watch
+echo  4. Launch Screen Mirroring
+echo  5. Sideload an APK File
+echo  6. Bulk Sideload APK (All Connected Devices)
+echo  7. Live Watch Logs
+echo  8. Open Logs Folder
+echo  9. Reset ADB Server / Clear Status
+echo 10. Other / Not listed
+echo.
+set /p issue_step="Enter the step number (1-10): "
+set "ISSUE_STEP_DESC=Other / Not listed"
+if "!issue_step!"=="1" set "ISSUE_STEP_DESC=Setup scrcpy System Path"
+if "!issue_step!"=="2" set "ISSUE_STEP_DESC=Pair Watch via Wi-Fi"
+if "!issue_step!"=="3" set "ISSUE_STEP_DESC=Connect to Watch"
+if "!issue_step!"=="4" set "ISSUE_STEP_DESC=Launch Screen Mirroring"
+if "!issue_step!"=="5" set "ISSUE_STEP_DESC=Sideload an APK File"
+if "!issue_step!"=="6" set "ISSUE_STEP_DESC=Bulk Sideload APK (All Connected Devices)"
+if "!issue_step!"=="7" set "ISSUE_STEP_DESC=Live Watch Logs"
+if "!issue_step!"=="8" set "ISSUE_STEP_DESC=Open Logs Folder"
+if "!issue_step!"=="9" set "ISSUE_STEP_DESC=Reset ADB Server / Clear Status"
+echo.
+set /p issue_comment="Describe what happened: "
+set "ISSUE_COMMENT=!issue_comment!"
+powershell.exe -NoProfile -Command "$title = 'Issue with Step ' + $env:issue_step + ' - ' + $env:ISSUE_STEP_DESC; $body = $env:ISSUE_COMMENT; $encTitle = [uri]::EscapeDataString($title); $encBody = [uri]::EscapeDataString($body); $url = 'https://github.com/aegorsuch/wearos-windows-bridge/issues/new?title=' + $encTitle + '&body=' + $encBody; Start-Process $url"
+echo.
+echo Opening the issue form in your browser...
+echo.
+pause
+goto MENU
+
+:OPEN_LOGS_FOLDER
+if not exist "%~dp0watch_logs" mkdir "%~dp0watch_logs"
+start "" "%~dp0watch_logs"
+goto MENU
+
+:REQUIRE_ADB
+where adb.exe >nul 2>nul
+if errorlevel 1 (
+    echo.
+    echo ADB was not found on your PATH. Select "1. Setup scrcpy System Path"
+    echo from the main menu, then try again. Restart this window if you already
+    echo completed setup.
+    echo.
+    set "TOOLS_OK=0"
+) else (
+    set "TOOLS_OK=1"
+)
+exit /b
 
 :SAVE_CACHE
 (
@@ -453,6 +612,18 @@ exit /b
 
 :OFFER_RECONNECT
 echo.
+if "!CONN_STATE!"=="unauthorized" (
+    echo Watch !SAVED_IP!:!SAVED_CONN_PORT! reports "unauthorized".
+    echo Check the watch screen for an "Allow debugging?" prompt and tap Allow,
+    echo then try again.
+    echo.
+    set "reconnect_choice="
+    set /p reconnect_choice="Retry connection now? (Y/N): "
+    if /i "!reconnect_choice!"=="Y" goto CONNECT
+    set "CONNECT_RETURN="
+    pause
+    exit /b
+)
 echo Saved connection !SAVED_IP!:!SAVED_CONN_PORT! is stale or unreachable.
 echo The watch's wireless debugging port likely changed since last time.
 echo.
