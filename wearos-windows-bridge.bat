@@ -54,10 +54,11 @@ echo  4. Launch Screen Mirroring
 echo  5. Sideload an APK File
 echo  6. Live Watch Logs
 echo  7. Reset ADB Server / Clear Status
-echo  8. Exit
+echo  8. Bulk Sideload APK (All Connected Devices)
+echo  9. Exit
 echo ===================================================
 set "choice="
-set /p choice="Select an option (1-8): "
+set /p choice="Select an option (1-9): "
 
 if "%choice%"=="1" goto SETUP_PATH
 if "%choice%"=="2" goto PAIR
@@ -66,7 +67,8 @@ if "%choice%"=="4" goto MIRROR
 if "%choice%"=="5" goto SIDELOAD
 if "%choice%"=="6" goto LIVE_LOGS
 if "%choice%"=="7" goto RESET
-if "%choice%"=="8" exit
+if "%choice%"=="8" goto BULK_SIDELOAD
+if "%choice%"=="9" exit
 goto MENU
 
 :SETUP_PATH
@@ -303,6 +305,68 @@ if errorlevel 1 (
     echo.
     echo APK installation failed. See the ADB error above for details.
 )
+echo.
+pause
+goto MENU
+
+:BULK_SIDELOAD
+cls
+echo BULK SIDELOAD APK (ALL CONNECTED DEVICES)
+echo ---------------------------------------------------
+echo Scanning for connected/authorized devices...
+echo.
+set "BULK_COUNT=0"
+for /f "skip=1 tokens=1,2" %%A in ('adb devices') do (
+    if "%%B"=="device" (
+        set /a BULK_COUNT+=1
+        set "BULK_SERIAL_!BULK_COUNT!=%%A"
+    )
+)
+if "!BULK_COUNT!"=="0" (
+    echo No authorized devices found. Make sure watches are paired,
+    echo Wireless Debugging is turned on, and they are on this network.
+    echo.
+    pause
+    goto MENU
+)
+echo Found !BULK_COUNT! device(s^):
+for /l %%I in (1,1,!BULK_COUNT!) do echo   - !BULK_SERIAL_%%I!
+echo.
+echo Drag and drop your APK file here, then press ENTER.
+echo.
+set /p apk_path="APK Path: "
+set "apk_path=!apk_path:"=!"
+if not exist "!apk_path!" (
+    echo APK file not found.
+    pause
+    goto MENU
+)
+set "CHECK_PATH=!apk_path!"
+powershell.exe -NoProfile -Command "if ($env:CHECK_PATH -match '[&|<>^!]') { exit 1 }" >nul
+if errorlevel 1 (
+    echo APK path contains unsupported command characters.
+    pause
+    goto MENU
+)
+echo.
+set "BULK_OK=0"
+set "BULK_FAIL=0"
+for /l %%I in (1,1,!BULK_COUNT!) do (
+    set "CUR_SERIAL=!BULK_SERIAL_%%I!"
+    echo ---------------------------------------------------
+    echo Installing to !CUR_SERIAL!...
+    adb -s "!CUR_SERIAL!" install -r -g --no-streaming "!apk_path!"
+    if errorlevel 1 (
+        echo RESULT: FAILED - !CUR_SERIAL!
+        set /a BULK_FAIL+=1
+    ) else (
+        echo RESULT: SUCCESS - !CUR_SERIAL!
+        set /a BULK_OK+=1
+    )
+)
+echo ---------------------------------------------------
+echo.
+echo Bulk sideload complete: !BULK_OK! succeeded, !BULK_FAIL! failed out of !BULK_COUNT!.
 echo.
 pause
 goto MENU

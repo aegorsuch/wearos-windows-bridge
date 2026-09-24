@@ -81,7 +81,15 @@ Select **7. Reset ADB Server / Clear Status** to:
 
 This does not remove the scrcpy folder from the user PATH, unpair the watch, remove installed apps, or delete ADB keys.
 
-Option **8. Exit** closes the helper without resetting anything.
+## Bulk Sideload an APK to Multiple Watches
+
+Select **8. Bulk Sideload APK (All Connected Devices)** to install one APK across every watch `adb` currently sees in the `device` (authorized) state, without connecting to each one individually first.
+
+Each watch must already be paired with this PC at least once (see **2. First Time Setup**) and have Wireless Debugging turned on while on the same network; already-paired watches are typically auto-discovered by `adb` over mDNS and require no manual Connect step. Run `adb devices` yourself first if you want to confirm which watches will be targeted.
+
+The helper lists every detected serial, then installs the chosen APK to each in turn with the same flags as single-device sideloading (`-r -g --no-streaming`), printing a per-device result and a final success/failure summary.
+
+Option **9. Exit** closes the helper without resetting anything.
 
 ## Local Files
 
