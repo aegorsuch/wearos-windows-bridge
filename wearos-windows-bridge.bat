@@ -96,6 +96,17 @@ echo ---------------------------------------------------
 echo.
 set /p user_scrcpy_path="Drag & drop or enter full path to scrcpy folder (e.g., C:\Tools\scrcpy-win64): "
 set "user_scrcpy_path=!user_scrcpy_path:"=!"
+for %%I in ("!user_scrcpy_path!") do set "user_scrcpy_path=%%~fI"
+set "CHECK_PATH=!user_scrcpy_path!"
+powershell.exe -NoProfile -Command "if ($env:CHECK_PATH -match '[!&|<>^]') { exit 1 }" >nul
+if errorlevel 1 (
+    echo.
+    echo WARNING: Folder path contains unsupported command characters.
+    echo Use a normal Windows folder path such as C:\Tools\scrcpy-win64.
+    echo.
+    pause
+    goto MENU
+)
 
 if not exist "!user_scrcpy_path!\scrcpy.exe" (
     echo.
@@ -161,6 +172,7 @@ if errorlevel 1 (
     pause
     goto MENU
 )
+
 echo.
 set /p pair_port="Enter Pairing Port (the number after the colon, e.g. 38583): "
 set "CHECK_PORT=!pair_port!"
@@ -200,14 +212,14 @@ if not "!PAIR_RESULT!"=="0" (
         echo pairing code/port that expired or was already used.
         echo Restarting the adb server now so the next attempt starts clean...
         adb kill-server >nul 2>nul
-        taskkill /F /IM adb.exe >nul 2>nul
+        call :KILL_LOCAL_ADB
         echo Done. Select "Pair Watch via Wi-Fi" again to retry - on the watch,
         echo reopen "Pair new device" first for a fresh code and port.
         echo.
         echo If it keeps failing with the SAME "protocol fault" error even with a
-        echo fresh code, an adb.exe process may be stuck in a bad state that a
-        echo normal kill-server can't reach. Try option 9 "Reset ADB Server /
-        echo Clear Status" to force-close every adb.exe process, then pair again.
+        echo fresh code, an adb.exe process tied to this helper may still be stuck.
+        echo Run option 9 "Reset ADB Server / Clear Status" to clear this helper's
+        echo local ADB state, then pair again.
     )
     if "!PAIR_NET_HINT!"=="1" (
         echo.
@@ -363,6 +375,7 @@ if "!CONN_OK!"=="0" (
 echo.
 set /p apk_path="APK Path: "
 set "apk_path=!apk_path:"=!"
+for %%I in ("!apk_path!") do set "apk_path=%%~fI"
 if not exist "!apk_path!" (
     echo APK file not found.
     pause
@@ -374,7 +387,7 @@ if /i not "!apk_path:~-4!"==".apk" (
     goto MENU
 )
 set "CHECK_PATH=!apk_path!"
-powershell.exe -NoProfile -Command "if ($env:CHECK_PATH -match '[&|<>^!]') { exit 1 }" >nul
+powershell.exe -NoProfile -Command "if ($env:CHECK_PATH -match '[!&|<>^]') { exit 1 }" >nul
 if errorlevel 1 (
     echo APK path contains unsupported command characters.
     pause
@@ -422,6 +435,7 @@ echo Drag and drop your APK file here, then press ENTER.
 echo.
 set /p apk_path="APK Path: "
 set "apk_path=!apk_path:"=!"
+for %%I in ("!apk_path!") do set "apk_path=%%~fI"
 if not exist "!apk_path!" (
     echo APK file not found.
     pause
@@ -433,7 +447,7 @@ if /i not "!apk_path:~-4!"==".apk" (
     goto MENU
 )
 set "CHECK_PATH=!apk_path!"
-powershell.exe -NoProfile -Command "if ($env:CHECK_PATH -match '[&|<>^!]') { exit 1 }" >nul
+powershell.exe -NoProfile -Command "if ($env:CHECK_PATH -match '[!&|<>^]') { exit 1 }" >nul
 if errorlevel 1 (
     echo APK path contains unsupported command characters.
     pause
@@ -475,7 +489,7 @@ if /i not "!reset_confirm!"=="Y" goto MENU
 echo.
 echo Resetting ADB server and clearing session memory...
 adb kill-server >nul 2>nul
-taskkill /F /IM adb.exe >nul 2>nul
+call :KILL_LOCAL_ADB
 set "SAVED_IP=None"
 set "SAVED_PAIR_PORT="
 set "SAVED_CONN_PORT="
@@ -596,6 +610,20 @@ if errorlevel 1 (
 )
 exit /b
 
+:KILL_LOCAL_ADB
+set "ADB_PATH="
+for /f "delims=" %%P in ('where adb.exe 2^>nul') do (
+    set "ADB_PATH=%%P"
+    goto :KILL_LOCAL_ADB_PROCESS
+)
+exit /b
+
+:KILL_LOCAL_ADB_PROCESS
+if not "!ADB_PATH!"=="" (
+    powershell.exe -NoProfile -Command "$path = $env:ADB_PATH; if ($path) { Get-CimInstance Win32_Process -Filter \"Name='adb.exe'\" | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.ToLower() -eq $path.ToLower() } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }"
+)
+exit /b
+
 :SAVE_CACHE
 (
     echo(!SAVED_IP!
@@ -607,7 +635,11 @@ exit /b
 :CHECK_CONNECTION
 set "CONN_STATE="
 for /f "usebackq delims=" %%S in (`adb -s "!SAVED_IP!:!SAVED_CONN_PORT!" get-state 2^>nul`) do set "CONN_STATE=%%S"
-if "!CONN_STATE!"=="device" (set "CONN_OK=1") else (set "CONN_OK=0")
+if "!CONN_STATE!"=="device" (
+    set "CONN_OK=1"
+) else (
+    set "CONN_OK=0"
+)
 exit /b
 
 :OFFER_RECONNECT
