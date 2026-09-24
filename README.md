@@ -17,7 +17,7 @@ Repository: https://git.tak.gov/aegorsuch/wearos-windows-bridge
 A `.bat` file is a small script that Windows runs like a program. To use this helper:
 
 1. Double-click `wearos-windows-bridge.bat` (or right-click it and choose **Open**) to launch it. A black console window will open with a numbered menu.
-2. If Windows shows a **Windows protected your PC** SmartScreen warning, click **More info**, then **Run anyway**. This appears because the file was downloaded from the internet, not because it is unsafe — this repository is hosted on git.tak.gov and has undergone the requisite security scanning.
+2. If Windows shows a **Windows protected your PC** SmartScreen warning, click **More info**, then **Run anyway**. This warning is common for downloaded batch files; before running it, confirm you downloaded it from the expected repository or a trusted source.
 3. Type the number of the menu option you want and press Enter. Follow the on-screen prompts.
 4. To type a folder or file path when asked, you can drag the file/folder from File Explorer directly into the console window instead of typing it out.
 5. Press `Ctrl+C` to cancel a running command (such as Live Watch Logs), or close the window at any time to quit.
