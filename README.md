@@ -66,7 +66,7 @@ Pairing and connection use different ports. The pairing port is shown after sele
 
 The helper saves the IP address and connection ports in `ip_cache.txt`. This file is local-only and is ignored by Git.
 
-If the first connection attempt is stale, offline, or waiting for watch approval, the helper retries up to three times. It restarts its local ADB server once during recovery and preserves the previous saved connection if all attempts fail.
+If the first connection attempt is stale, offline, or waiting for watch approval, the helper retries up to three times. It restarts its local ADB server once during recovery and lets you enter a replacement connection port if the watch regenerated it. Press Enter to retry the current port. The helper preserves the previous saved connection if all attempts fail.
 
 ## Screen Mirroring
 
@@ -146,7 +146,7 @@ Confirm that Wireless Debugging and **Pair new device** are open on the watch, t
 
 ### Connection fails
 
-Use the port from the main Wireless Debugging screen, not the pairing port. Confirm the PC and watch are on the same network.
+Use the port from the main Wireless Debugging screen, not the pairing port. If the first connection attempt fails and the watch shows a different port, enter that new port when prompted. Confirm the PC and watch are on the same network.
 
 ### Watch shows "unauthorized"
 

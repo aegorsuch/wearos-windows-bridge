@@ -363,6 +363,7 @@ if "!CONN_OK!"=="0" (
             echo Connection failed or is stale. Restarting the local ADB server...
             adb kill-server >nul 2>nul
             call :KILL_LOCAL_ADB
+            call :PROMPT_CONNECTION_PORT
         ) else (
             echo Connection is still unavailable. Retrying automatically in 3 seconds...
         )
@@ -460,7 +461,8 @@ if "!CONN_OK!"=="0" (
 )
 
 echo.
-set /p apk_path="APK Path: "
+echo Drag and drop the APK file from File Explorer into this window, then press Enter.
+set /p apk_path="APK Path (or type the full path): "
 set "apk_path=!apk_path:"=!"
 for %%I in ("!apk_path!") do set "apk_path=%%~fI"
 if not exist "!apk_path!" (
@@ -481,6 +483,14 @@ if errorlevel 1 (
     goto MENU
 )
 echo.
+echo Confirming the watch is ready for installation...
+call :CHECK_CONNECTION
+if "!CONN_OK!"=="0" (
+    echo The watch connection was lost before installation started.
+    set "CONNECT_RETURN=SIDELOAD"
+    call :OFFER_RECONNECT
+    goto MENU
+)
 adb -s "!SAVED_IP!:!SAVED_CONN_PORT!" install -r -g --no-streaming "!apk_path!"
 if errorlevel 1 (
     echo.
@@ -826,6 +836,23 @@ if "!CONN_STATE!"=="device" (
         set "CONN_STATE=offline"
     )
 )
+exit /b
+
+:PROMPT_CONNECTION_PORT
+echo.
+echo If the port on the watch changed, enter the new connection port now.
+echo Press Enter to retry port !conn_port!.
+:PROMPT_CONNECTION_PORT_INPUT
+set "NEW_CONN_PORT="
+set /p NEW_CONN_PORT="Connection Port: "
+if "!NEW_CONN_PORT!"=="" exit /b
+set "CHECK_PORT=!NEW_CONN_PORT!"
+powershell.exe -NoProfile -Command "if ($env:CHECK_PORT -notmatch '^\d{1,5}$' -or [int]$env:CHECK_PORT -lt 1 -or [int]$env:CHECK_PORT -gt 65535) { exit 1 }" >nul
+if errorlevel 1 (
+    echo Invalid connection port. Enter a number from 1 to 65535, or press Enter to retry the current port.
+    goto PROMPT_CONNECTION_PORT_INPUT
+)
+set "conn_port=!NEW_CONN_PORT!"
 exit /b
 
 :SCAN_FOR_TARGET
