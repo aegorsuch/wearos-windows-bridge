@@ -1,3 +1,6 @@
 ip_cache.txt
 path_configured.txt
+active_profile.txt
+watch_profiles.json
 watch_logs/
+_tmp_scrcpy_test/
