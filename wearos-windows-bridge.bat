@@ -8,6 +8,9 @@ set "SAVED_IP=None"
 set "SAVED_PAIR_PORT="
 set "SAVED_CONN_PORT="
 set "PATH_SETUP=0"
+set "AUTO_MODE=0"
+set "AUTO_APK_PATH="
+set "AUTO_LOG_FILTER="
 
 if exist "%~dp0ip_cache.txt" (
     < "%~dp0ip_cache.txt" (
@@ -23,25 +26,49 @@ if exist "%~dp0path_configured.txt" (
     set "PATH_SETUP=1"
 )
 
+if not "%~1"=="" (
+    set "AUTO_MODE=1"
+    if /i "%~1"=="--status" goto DEVICE_STATUS
+    if /i "%~1"=="--diagnose" goto DIAGNOSE_ENVIRONMENT
+    if /i "%~1"=="--mirror" goto MIRROR
+    if /i "%~1"=="--help" goto HELP_MODE
+    if /i "%~1"=="--connect" (
+        set "watch_ip=%~2"
+        set "conn_port=%~3"
+        goto CONNECT
+    )
+    if /i "%~1"=="--install" (
+        set "AUTO_APK_PATH=%~2"
+        goto SIDELOAD
+    )
+    if /i "%~1"=="--bulk-install" (
+        set "AUTO_APK_PATH=%~2"
+        goto BULK_SIDELOAD
+    )
+    if /i "%~1"=="--logs" (
+        set "AUTO_LOG_FILTER=%~2"
+        goto LIVE_LOGS
+    )
+    set "AUTO_MODE=0"
+    echo Unsupported command-line option: %~1
+    echo Supported options: --status, --diagnose, --mirror, --connect IP PORT, --install APK, --bulk-install APK, --logs [KEYWORD]
+    exit /b 1
+)
+
 :MENU
 cls
 set "STEP0_STATUS="
-set "STEP1_STATUS= (Not Paired)"
-set "STEP2_STATUS= (Not Connected)"
+set "STEP1_STATUS= (No Pairing Info Saved)"
+set "STEP2_STATUS= (No Connection Info Saved)"
 
 set "STEP0_STATUS= (Not Configured)"
 if "!PATH_SETUP!"=="1" set "STEP0_STATUS= (Configured)"
 
-if not "!SAVED_PAIR_PORT!"=="" (
-    if not "!SAVED_PAIR_PORT!"=="ECHO is off." (
-        set "STEP1_STATUS= (Paired to !SAVED_IP!:!SAVED_PAIR_PORT!)"
-    )
-) else if not "!SAVED_IP!"=="None" (
-    set "STEP1_STATUS= (Paired to !SAVED_IP!)"
-)
+if not "!SAVED_PAIR_PORT!"=="" if not "!SAVED_PAIR_PORT!"=="ECHO is off." set "STEP1_STATUS= (Pairing Info Saved: !SAVED_IP!:!SAVED_PAIR_PORT!)"
+if "!SAVED_PAIR_PORT!"=="" if not "!SAVED_IP!"=="None" set "STEP1_STATUS= (Pairing Info Saved: !SAVED_IP!)"
 
 if not "!SAVED_CONN_PORT!"=="" (
-    set "STEP2_STATUS= (Connected to !SAVED_IP!:!SAVED_CONN_PORT!)"
+    set "STEP2_STATUS= (Last Connection Saved: !SAVED_IP!:!SAVED_CONN_PORT!)"
 )
 
 echo ===================================================
@@ -61,6 +88,8 @@ echo 11. Export Diagnostic Bundle
 echo 12. Report an Issue
 echo 13. Exit
 echo ===================================================
+call :SHOW_DEVICE_SUMMARY
+echo ===================================================
 set "choice="
 set /p choice="Select an option (1-13): "
 
@@ -77,6 +106,32 @@ if "%choice%"=="10" goto DIAGNOSE_ENVIRONMENT
 if "%choice%"=="11" goto EXPORT_DIAGNOSTICS
 if "%choice%"=="12" goto REPORT_ISSUE
 if "%choice%"=="13" exit
+goto MENU
+
+:DEVICE_STATUS
+cls
+echo DEVICE STATUS
+echo ---------------------------------------------------
+call :SHOW_DEVICE_SUMMARY
+echo.
+if "!AUTO_MODE!"=="1" exit /b 0
+pause
+goto MENU
+
+:HELP_MODE
+cls
+echo WearOS Windows Bridge command-line options
+echo ---------------------------------------------------
+echo --status                Show the ADB device status screen
+echo --diagnose             Show the diagnostics dashboard
+echo --mirror               Launch screen mirroring immediately
+echo --connect IP PORT      Connect to a watch directly
+echo --install APK          Sideload an APK without the menu
+echo --bulk-install APK     Install an APK to all authorized devices
+echo --logs [KEYWORD]       Capture a log with an optional filter
+echo --help                 Show this help screen
+if "!AUTO_MODE!"=="1" exit /b 0
+pause
 goto MENU
 
 :SETUP_PATH
@@ -248,57 +303,56 @@ echo CONNECT TO WATCH
 echo ---------------------------------------------------
 echo Note: Use the Port listed on the MAIN Wireless Debugging screen
 echo.
+if "!AUTO_MODE!"=="0" if "!SAVED_IP!"=="None" goto CONNECT_NOT_PAIRED
 set "use_saved=N"
-if not "!SAVED_IP!"=="None" (
-    echo Saved IP detected: !SAVED_IP!
-    set /p use_saved="Use saved IP? (Y/N): "
+if "!AUTO_MODE!"=="1" (
+    set "use_saved=Y"
+    if not "!SAVED_IP!"=="None" (
+        echo Auto mode: using saved IP !SAVED_IP!
+    )
+) else (
+    if not "!SAVED_IP!"=="None" (
+        echo Saved IP detected: !SAVED_IP!
+        set /p use_saved="Use saved IP? (Y/N): "
+    )
 )
 
 set "AUTO_TARGET=0"
 set "watch_ip="
 set "conn_port="
+
 if /i "!use_saved!"=="Y" (
     set "watch_ip=!SAVED_IP!"
     if not "!SAVED_CONN_PORT!"=="" (
         set "conn_port=!SAVED_CONN_PORT!"
     )
+    call :CHECK_CONNECTION
+    if not "!CONN_OK!"=="1" (
+        echo Saved connection is not currently active.
+        call :SELECT_ACTIVE_DEVICE
+        if not "!watch_ip!"=="" (
+            echo Using detected device: !watch_ip!
+        )
+    )
 ) else (
+    call :SELECT_ACTIVE_DEVICE
+)
+
+if "!watch_ip!"=="" (
     set "AUTO_TARGET=1"
-    set "TARGET_COUNT=0"
-    for /f "skip=1 tokens=1,2" %%A in ('adb devices 2^>nul') do (
-        if "%%B"=="device" (
-            set /a TARGET_COUNT+=1
-            set "TARGET_SERIAL_!TARGET_COUNT!=%%A"
-        )
-    )
-    if "!TARGET_COUNT!"=="1" (
-        set "watch_ip=!TARGET_SERIAL_1!"
-        set "watch_ip=!watch_ip: =!"
-        set "AUTO_TARGET=0"
-    ) else if "!TARGET_COUNT!" GTR "1" (
-        echo Multiple authorized devices were found.
-        echo.
-        for /l %%N in (1,1,!TARGET_COUNT!) do (
-            echo   %%N. !TARGET_SERIAL_%%N!
-        )
-        set /p target_choice="Select the device number to connect to: "
-        if not "!target_choice!"=="" (
-            set /a PICKED=!target_choice! 2>nul
-            if not "!PICKED!"=="" if !PICKED! GEQ 1 if !PICKED! LEQ !TARGET_COUNT! (
-                set "watch_ip=!TARGET_SERIAL_!PICKED!!"
-                set "watch_ip=!watch_ip: =!"
-                set "AUTO_TARGET=0"
-            )
-        )
-    )
 )
 
 if "!AUTO_TARGET!"=="1" (
+    if "!AUTO_MODE!"=="1" (
+        echo Auto mode requires an explicit IP and port.
+        exit /b 1
+    )
     set /p watch_ip="Enter Watch IP Address: "
     set "CHECK_IP=!watch_ip!"
     powershell.exe -NoProfile -Command "if ($env:CHECK_IP -notmatch '^(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$') { exit 1 }" >nul
     if errorlevel 1 (
         echo Invalid IP address.
+        if "!AUTO_MODE!"=="1" exit /b 1
         pause
         goto MENU
     )
@@ -308,12 +362,14 @@ if "!AUTO_TARGET!"=="1" (
     powershell.exe -NoProfile -Command "if ($env:CHECK_PORT -notmatch '^\d{1,5}$' -or [int]$env:CHECK_PORT -lt 1) { exit 1 }" >nul
     if errorlevel 1 (
         echo Invalid connection port.
+        if "!AUTO_MODE!"=="1" exit /b 1
         pause
         goto MENU
     )
 ) else (
     if "!watch_ip!"=="" (
         echo No device selected.
+        if "!AUTO_MODE!"=="1" exit /b 1
         pause
         goto MENU
     )
@@ -323,6 +379,7 @@ if "!AUTO_TARGET!"=="1" (
         powershell.exe -NoProfile -Command "if ($env:CHECK_PORT -notmatch '^\d{1,5}$' -or [int]$env:CHECK_PORT -lt 1) { exit 1 }" >nul
         if errorlevel 1 (
             echo Invalid connection port.
+            if "!AUTO_MODE!"=="1" exit /b 1
             pause
             goto MENU
         )
@@ -373,11 +430,13 @@ if "!CONN_OK!"=="0" (
     echo Connection failed. Nothing was saved.
     set "SAVED_IP=!PREV_SAVED_IP!"
     set "SAVED_CONN_PORT=!PREV_SAVED_CONN_PORT!"
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
 call :SAVE_CACHE
 
+if "!AUTO_MODE!"=="1" exit /b 0
 pause
 if not "!CONNECT_RETURN!"=="" (
     set "RETURN_TARGET=!CONNECT_RETURN!"
@@ -386,12 +445,20 @@ if not "!CONNECT_RETURN!"=="" (
 )
 goto MENU
 
+:CONNECT_NOT_PAIRED
+echo No watch has been paired with this helper yet.
+echo Select option 2, First Time Setup: Pair Watch via Wi-Fi, before connecting.
+echo.
+pause
+goto MENU
+
 :MIRROR
 cls
 echo LAUNCHING SCRCPY
 echo ---------------------------------------------------
 call :REQUIRE_ADB
 if "!TOOLS_OK!"=="0" (
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
@@ -402,18 +469,21 @@ if errorlevel 1 (
     echo from the main menu, then try again. Restart this window if you already
     echo completed setup.
     echo.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
 if "!SAVED_IP!"=="None" (
     echo No saved watch connection. Connect to the watch first.
     echo.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
 if "!SAVED_CONN_PORT!"=="" (
     echo No saved connection port. Connect to the watch first.
     echo.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
@@ -422,12 +492,14 @@ call :CHECK_CONNECTION
 if "!CONN_OK!"=="0" (
     set "CONNECT_RETURN=MIRROR"
     call :OFFER_RECONNECT
+    if "!AUTO_MODE!"=="1" exit /b 0
     goto MENU
 )
 echo Running stream...
 echo.
 scrcpy.exe --serial="!SAVED_IP!:!SAVED_CONN_PORT!" --max-size=360 --video-bit-rate=1M
 echo.
+if "!AUTO_MODE!"=="1" exit /b 0
 pause
 goto MENU
 
@@ -437,18 +509,21 @@ echo SIDELOAD APK
 echo ---------------------------------------------------
 call :REQUIRE_ADB
 if "!TOOLS_OK!"=="0" (
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
 if "!SAVED_IP!"=="None" (
     echo No saved watch connection. Connect to the watch first.
     echo.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
 if "!SAVED_CONN_PORT!"=="" (
     echo No saved connection port. Connect to the watch first.
     echo.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
@@ -457,21 +532,29 @@ call :CHECK_CONNECTION
 if "!CONN_OK!"=="0" (
     set "CONNECT_RETURN=SIDELOAD"
     call :OFFER_RECONNECT
+    if "!AUTO_MODE!"=="1" exit /b 0
     goto MENU
 )
 
 echo.
-echo Drag and drop the APK file from File Explorer into this window, then press Enter.
-set /p apk_path="APK Path (or type the full path): "
+if not "!AUTO_APK_PATH!"=="" (
+    set "apk_path=!AUTO_APK_PATH!"
+    echo Auto-selected APK: !apk_path!
+) else (
+    echo Drag and drop the APK file from File Explorer into this window, then press Enter.
+    set /p apk_path="APK Path (or type the full path): "
+)
 set "apk_path=!apk_path:"=!"
 for %%I in ("!apk_path!") do set "apk_path=%%~fI"
 if not exist "!apk_path!" (
     echo APK file not found.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
 if /i not "!apk_path:~-4!"==".apk" (
     echo WARNING: "!apk_path!" does not end in .apk. Make sure you dragged the correct file.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
@@ -479,9 +562,11 @@ set "CHECK_PATH=!apk_path!"
 powershell.exe -NoProfile -Command "if ($env:CHECK_PATH -match '[!&|<>^]') { exit 1 }" >nul
 if errorlevel 1 (
     echo APK path contains unsupported command characters.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
+if not "!AUTO_APK_PATH!"=="" set "AUTO_APK_PATH="
 echo.
 echo Confirming the watch is ready for installation...
 call :CHECK_CONNECTION
@@ -495,8 +580,10 @@ adb -s "!SAVED_IP!:!SAVED_CONN_PORT!" install -r -g --no-streaming "!apk_path!"
 if errorlevel 1 (
     echo.
     echo APK installation failed. See the ADB error above for details.
+    if "!AUTO_MODE!"=="1" exit /b 1
 )
 echo.
+if "!AUTO_MODE!"=="1" exit /b 0
 pause
 goto MENU
 
@@ -533,16 +620,23 @@ for /l %%I in (1,1,!BULK_COUNT!) do echo   - !BULK_SERIAL_%%I!
 echo.
 echo Drag and drop your APK file here, then press ENTER.
 echo.
-set /p apk_path="APK Path: "
+if not "!AUTO_APK_PATH!"=="" (
+    set "apk_path=!AUTO_APK_PATH!"
+    echo Auto-selected APK: !apk_path!
+) else (
+    set /p apk_path="APK Path: "
+)
 set "apk_path=!apk_path:"=!"
 for %%I in ("!apk_path!") do set "apk_path=%%~fI"
 if not exist "!apk_path!" (
     echo APK file not found.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
 if /i not "!apk_path:~-4!"==".apk" (
     echo WARNING: "!apk_path!" does not end in .apk. Make sure you dragged the correct file.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
@@ -550,9 +644,11 @@ set "CHECK_PATH=!apk_path!"
 powershell.exe -NoProfile -Command "if ($env:CHECK_PATH -match '[!&|<>^]') { exit 1 }" >nul
 if errorlevel 1 (
     echo APK path contains unsupported command characters.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
+if not "!AUTO_APK_PATH!"=="" set "AUTO_APK_PATH="
 echo.
 set "BULK_OK=0"
 set "BULK_FAIL=0"
@@ -607,35 +703,44 @@ echo LIVE WATCH LOGS
 echo ---------------------------------------------------
 call :REQUIRE_ADB
 if "!TOOLS_OK!"=="0" (
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
 if "!SAVED_IP!"=="None" (
     echo No saved watch connection. Connect to the watch first.
     echo.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
 if "!SAVED_CONN_PORT!"=="" (
     echo No saved connection port. Connect to the watch first.
     echo.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
 if not exist "%~dp0watch_logs" mkdir "%~dp0watch_logs"
+set "LOG_DIR=%~dp0watch_logs"
 for /f "delims=" %%T in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "LOG_START=%%T"
 set "LOG_SERIAL=!SAVED_IP!:!SAVED_CONN_PORT!"
 set "LOG_FILTER="
-set /p LOG_FILTER="Optional keyword filter (press ENTER for all logs): "
+if not "!AUTO_LOG_FILTER!"=="" (
+    set "LOG_FILTER=!AUTO_LOG_FILTER!"
+    echo Auto keyword filter: !LOG_FILTER!
+) else (
+    set /p LOG_FILTER="Optional keyword filter (press ENTER for all logs): "
+)
 set "CHECK_FILTER=!LOG_FILTER!"
 powershell.exe -NoProfile -Command "if ($env:CHECK_FILTER -notmatch '^[A-Za-z0-9._-]*$') { exit 1 }" >nul
 if errorlevel 1 (
     echo Log filter may contain only letters, numbers, periods, underscores, and hyphens.
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
 if "!LOG_FILTER!"=="" (set "LOG_FILTER_TAG=none") else (set "LOG_FILTER_TAG=!LOG_FILTER!")
-rem write straight to the final logs folder so a capture is never stranded in %TEMP% if interrupted
 set "LIVE_LOG_FILE=%~dp0watch_logs\!SAVED_IP!_!SAVED_CONN_PORT!_watch_log_!LOG_FILTER_TAG!_!LOG_START!_inprogress.txt"
 echo Streaming logs from !LOG_SERIAL!...
 echo Press Ctrl+C to stop and return to the menu.
@@ -646,11 +751,23 @@ powershell.exe -NoProfile -Command "& adb.exe -s $env:LOG_SERIAL logcat -v time 
 for /f "delims=" %%T in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "LOG_END=%%T"
 set "FINAL_LOG_NAME=!SAVED_IP!_!SAVED_CONN_PORT!_watch_log_!LOG_FILTER_TAG!_!LOG_START!_!LOG_END!.txt"
 if exist "!LIVE_LOG_FILE!" ren "!LIVE_LOG_FILE!" "!FINAL_LOG_NAME!"
+call :SUMMARIZE_LOG_FILE
+if not "!AUTO_LOG_FILTER!"=="" (
+    set "AUTO_LOG_FILTER="
+)
 echo.
 echo Live log capture saved to:
 if exist "%~dp0watch_logs\!FINAL_LOG_NAME!" (echo %~dp0watch_logs\!FINAL_LOG_NAME!) else (echo !LIVE_LOG_FILE!)
+if exist "%~dp0watch_logs\!FINAL_LOG_NAME!_summary.txt" echo Summary: %~dp0watch_logs\!FINAL_LOG_NAME!_summary.txt
+if "!AUTO_MODE!"=="1" exit /b 0
 pause
 goto MENU
+
+:SUMMARIZE_LOG_FILE
+set "LOG_SUMMARY_PATH=%~dp0watch_logs\!FINAL_LOG_NAME!_summary.txt"
+if not exist "%~dp0watch_logs\!FINAL_LOG_NAME!" exit /b
+powershell.exe -NoProfile -Command "$logPath = Join-Path $env:LOG_DIR $env:FINAL_LOG_NAME; $summaryPath = $logPath + '_summary.txt'; $lines = @(Get-Content -Path $logPath -ErrorAction SilentlyContinue); if (-not $lines) { $total=0; $errors=0; $warnings=0; $info=0 } else { $total = $lines.Count; $errors = ($lines | Where-Object { $_ -match 'FATAL|Exception|E/.*:|ERROR|NoClassDefFoundError|RuntimeException|NullPointerException' }).Count; $warnings = ($lines | Where-Object { $_ -match 'W/.*:|WARN|warning' }).Count; $info = $total - $errors - $warnings; if ($info -lt 0) { $info = 0 } }; $text = @(); $text += 'Log summary'; $text += '-----------'; $text += 'Total lines: ' + $total; $text += 'Error lines: ' + $errors; $text += 'Warning lines: ' + $warnings; $text += 'Informational lines: ' + $info; if (-not [string]::IsNullOrWhiteSpace($env:LOG_FILTER)) { $text += 'Keyword filter: ' + $env:LOG_FILTER }; $text | Set-Content -Path $summaryPath;"
+exit /b
 
 :REPORT_ISSUE
 cls
@@ -702,19 +819,72 @@ echo DIAGNOSE ENVIRONMENT
 echo ---------------------------------------------------
 call :REQUIRE_ADB
 if "!TOOLS_OK!"=="0" (
+    if "!AUTO_MODE!"=="1" exit /b 1
     pause
     goto MENU
 )
+
+echo ADB / TOOL CHECK
+where adb.exe >nul 2>nul
+if errorlevel 1 (
+    echo   - adb.exe: not found on PATH
+) else (
+    for /f "delims=" %%P in ('where adb.exe 2^>nul') do echo   - adb.exe: %%P
+)
 where scrcpy.exe >nul 2>nul
 if errorlevel 1 (
-    echo scrcpy.exe was not found on PATH.
+    echo   - scrcpy.exe: not found on PATH
 ) else (
-    echo scrcpy.exe: found on PATH
+    echo   - scrcpy.exe: found on PATH
 )
-for /f "delims=" %%P in ('where adb.exe 2^>nul') do echo adb.exe: %%P
-for /f "delims=" %%A in ('adb version 2^>nul') do echo ADB version: %%A
-for /f "delims=" %%A in ('adb devices 2^>nul') do echo %%A
-call :LIST_DEVICE_SUMMARY
+
+for /f "delims=" %%A in ('adb version 2^>nul') do echo   - ADB version: %%A
+
+echo.
+echo DEVICE STATE
+call :SHOW_DEVICE_SUMMARY
+
+echo.
+echo SAVED CONNECTION
+if "!SAVED_IP!"=="None" (
+    echo   - No saved IP address
+) else (
+    echo   - Saved IP: !SAVED_IP!
+)
+if "!SAVED_CONN_PORT!"=="" (
+    echo   - No saved connection port
+) else (
+    echo   - Saved connection: !SAVED_IP!:!SAVED_CONN_PORT!
+    call :CHECK_CONNECTION
+    if "!CONN_OK!"=="1" (
+        echo   - Current state: connected and ready
+    ) else (
+        echo   - Current state: not connected or not authorized
+    )
+)
+
+echo.
+echo QUICK FINDINGS
+if "!AUTH_COUNT!"=="0" (
+    echo   - No authorized watches are currently visible to ADB.
+    echo   - Check Wireless Debugging on the watch and confirm both devices are on the same network.
+) else (
+    echo   - Authorized devices detected: !AUTH_COUNT!
+)
+if "!UNAUTH_COUNT!" GTR "0" (
+    echo   - One or more watches are unauthorized. Tap Allow on the watch screen and retry.
+)
+if "!OFFLINE_COUNT!" GTR "0" (
+    echo   - One or more watches are offline or asleep. Reconnect later or ensure the watch remains on Wi-Fi.
+)
+if "!PATH_SETUP!"=="1" (
+    echo   - scrcpy folder appears to be configured in the user PATH.
+) else (
+    echo   - PATH is not configured yet. Use option 1 to add scrcpy to PATH.
+)
+
+echo.
+if "!AUTO_MODE!"=="1" exit /b 0
 pause
 goto MENU
 
@@ -786,6 +956,105 @@ goto MENU
 if not exist "%~dp0watch_logs" mkdir "%~dp0watch_logs"
 start "" "%~dp0watch_logs"
 goto MENU
+
+:SHOW_DEVICE_SUMMARY
+set "AUTH_COUNT=0"
+set "UNAUTH_COUNT=0"
+set "OFFLINE_COUNT=0"
+set "OTHER_COUNT=0"
+for /f "skip=1 tokens=1,2" %%A in ('adb devices 2^>nul') do (
+    if "%%B"=="device" (
+        set /a AUTH_COUNT+=1
+    )
+    if "%%B"=="unauthorized" (
+        set /a UNAUTH_COUNT+=1
+    )
+    if "%%B"=="offline" (
+        set /a OFFLINE_COUNT+=1
+    )
+    if not "%%B"=="device" if not "%%B"=="unauthorized" if not "%%B"=="offline" if not "%%A"=="List" (
+        set /a OTHER_COUNT+=1
+    )
+)
+if "!AUTH_COUNT!"=="0" if "!UNAUTH_COUNT!"=="0" if "!OFFLINE_COUNT!"=="0" if "!OTHER_COUNT!"=="0" (
+    echo Device overview: no watches detected by ADB.
+    exit /b
+)
+
+echo Device overview: !AUTH_COUNT! authorized, !UNAUTH_COUNT! unauthorized, !OFFLINE_COUNT! offline.
+for /f "skip=1 tokens=1,2" %%A in ('adb devices 2^>nul') do (
+    if "%%B"=="device" (
+        echo   - %%A: authorized
+    )
+    if "%%B"=="unauthorized" (
+        echo   - %%A: unauthorized (tap Allow on the watch)
+    )
+    if "%%B"=="offline" (
+        echo   - %%A: offline (unreachable or sleeping)
+    )
+)
+exit /b
+
+:SELECT_ACTIVE_DEVICE
+set "TARGET_COUNT=0"
+for /f "skip=1 tokens=1,2" %%A in ('adb devices 2^>nul') do (
+    if "%%B"=="device" (
+        set /a TARGET_COUNT+=1
+        set "TARGET_SERIAL_!TARGET_COUNT!=%%A"
+    )
+)
+if "!TARGET_COUNT!"=="0" (
+    echo No authorized devices were detected right now.
+    echo The watch may be offline, unauthorized, or not on this network.
+    set "watch_ip="
+    set "conn_port="
+    exit /b
+)
+if "!TARGET_COUNT!"=="1" (
+    set "watch_ip=!TARGET_SERIAL_1!"
+    set "watch_ip=!watch_ip: =!"
+    call :RESOLVE_MDNS_TARGET
+    exit /b
+)
+echo Multiple authorized devices were found.
+for /l %%N in (1,1,!TARGET_COUNT!) do (
+    echo   %%N. !TARGET_SERIAL_%%N!
+)
+set "target_choice="
+set /p target_choice="Select the device number to connect to: "
+if not "!target_choice!"=="" (
+    set /a PICKED=!target_choice! 2>nul
+    if not "!PICKED!"=="" if !PICKED! GEQ 1 if !PICKED! LEQ !TARGET_COUNT! (
+        set "watch_ip=!TARGET_SERIAL_!PICKED!!"
+        set "watch_ip=!watch_ip: =!"
+        call :RESOLVE_MDNS_TARGET
+        exit /b
+    )
+)
+echo Invalid selection; falling back to manual entry.
+set "watch_ip="
+set "conn_port="
+exit /b
+
+:RESOLVE_MDNS_TARGET
+set "MDNS_ENDPOINT="
+set "MDNS_NAME=!watch_ip!"
+for /f "tokens=1 delims=." %%I in ("!MDNS_NAME!") do set "MDNS_NAME=%%I"
+for /f "skip=1 tokens=1,2,3" %%A in ('adb mdns services 2^>nul') do (
+    if /i "%%A"=="!MDNS_NAME!" set "MDNS_ENDPOINT=%%C"
+)
+if "!MDNS_ENDPOINT!"=="" (
+    echo Could not resolve the discovered mDNS device to an IP address.
+    set "watch_ip="
+    set "conn_port="
+    exit /b
+)
+for /f "tokens=1,2 delims=:" %%I in ("!MDNS_ENDPOINT!") do (
+    set "watch_ip=%%I"
+    set "conn_port=%%J"
+)
+echo Resolved discovered device to !watch_ip!:!conn_port!
+exit /b
 
 :REQUIRE_ADB
 where adb.exe >nul 2>nul
@@ -936,6 +1205,10 @@ if "!CONN_STATE!"=="unauthorized" (
     echo Check the watch screen for an "Allow debugging?" prompt and tap Allow,
     echo then try again. If you have multiple watches, confirm this is the right one.
     echo.
+    if "!AUTO_MODE!"=="1" (
+        echo Auto mode: retrying connection immediately.
+        goto CONNECT
+    )
     set "reconnect_choice="
     set /p reconnect_choice="Retry connection now? (Y/N): "
     if /i "!reconnect_choice!"=="Y" goto CONNECT
@@ -951,6 +1224,10 @@ if "!CONN_STATE!"=="offline" (
     echo Saved connection !SAVED_IP!:!SAVED_CONN_PORT! is stale or unreachable.
     echo The watch's wireless debugging port likely changed since last time.
     echo.
+)
+if "!AUTO_MODE!"=="1" (
+    echo Auto mode: reconnecting now.
+    goto CONNECT
 )
 set "reconnect_choice="
 set /p reconnect_choice="Reconnect now? (Y/N): "
