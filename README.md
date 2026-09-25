@@ -61,12 +61,19 @@ Pairing and connection use different ports. The pairing port is shown after sele
 
 1. Return to the main **Wireless Debugging** screen on the watch.
 2. Select **3. Connect to Watch**.
-3. Use the saved IP address when offered, or enter it manually.
-4. Enter the connection port shown after the colon on the main screen.
+3. If the saved watch is unavailable, the helper will check which authorized devices are currently visible through ADB and offer the active one automatically.
+4. Use the saved IP address when offered, or enter it manually.
+5. Enter the connection port shown after the colon on the main screen.
 
 The helper saves the IP address and connection ports in `ip_cache.txt`. This file is local-only and is ignored by Git.
 
 If the first connection attempt is stale, offline, or waiting for watch approval, the helper retries up to three times. It restarts its local ADB server once during recovery and lets you enter a replacement connection port if the watch regenerated it. Press Enter to retry the current port. The helper preserves the previous saved connection if all attempts fail.
+
+## Device Overview and Recovery
+
+The bottom of the main menu shows a live device overview with counts for authorized, unauthorized, and offline watches detected by ADB. The menu labels saved pairing and connection details as cached information rather than claiming that the watch is currently paired or connected. If the saved watch is not currently active, the helper now automatically checks the visible authorized devices, resolves mDNS device names to their actual IP address and port, and offers the correct one before falling back to manual entry.
+
+If you select **3. Connect to Watch** before pairing a watch through the helper, it explains that pairing is required and directs you to **2. First Time Setup: Pair Watch via Wi-Fi**.
 
 ## Screen Mirroring
 
