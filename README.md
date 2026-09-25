@@ -141,6 +141,51 @@ The helper creates these local files beside the batch file:
 
 The six-digit pairing code is used only during pairing and is not saved.
 
+## PowerShell core, profiles, and automation
+
+The helper now ships with a PowerShell-based core and a small batch launcher for compatibility. This gives the project more robust ADB recovery, structured status output, and profile support for multiple watches.
+
+### Multi-watch profiles
+
+Profiles are optional. If you only use one Wear OS watch, you can ignore them and keep using the default setup. The profile system is mainly a convenience for multi-watch setups, where each watch keeps its own saved IP, pairing port, and connection port.
+
+This is useful when you have more than one Wear OS device in your setup. For example, you might keep one profile for your primary watch (`ODIN-WEARTAK`) and another for a dev device (`ODIN-WEARTAK-4`). That way each device keeps its own saved settings, and you can switch without retyping setup details each time.
+
+If you do want to manage profiles, either use the menu flow or the command-line options:
+
+- `--profile-list`
+- `--profile-use NAME`
+- `--profile-delete NAME`
+
+The `default` profile cannot be deleted, but you can create and switch to other names like `ODIN-WEARTAK` or `ODIN-WEARTAK-4` for separate devices. For a quick menu-based removal, enter `DELETE NAME` in the profile management prompt.
+
+### Developer mode
+
+Most users can ignore all of the advanced features. If you want the more experimental or power-user options, launch the tool in developer mode:
+
+- `wearos-windows-bridge.bat --dev-mode`
+- or set `WEAROS_DEV_MODE=1` in your shell before launching it
+
+When developer mode is enabled, these options appear under a dedicated developer menu:
+
+- profiles
+- bulk sideload
+- diagnose environment
+- diagnostic bundle export
+- pair + connect + mirror
+
+### Structured status output
+
+The PowerShell script exposes a `--status-json` route for scripts or automation. This returns the active profile, saved IP/port values, and the current device summary in JSON, which makes it easier to build dashboards or integrations.
+
+### Self-healing ADB recovery
+
+The PowerShell core includes a recovery path that kills stale `adb.exe` processes and restarts the local ADB server before retrying failed connections. This helps when another Android tool has left a conflicting ADB server running, or when a saved port is stale.
+
+### One-click pair + connect + mirror
+
+Use the `--pair-connect-mirror` command to do a full quick-start flow in one action: pair a watch, connect to it, and launch scrcpy immediately when the watch is available.
+
 ## Troubleshooting
 
 ### More than one ADB device
