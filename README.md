@@ -12,15 +12,15 @@ Repository: https://git.tak.gov/aegorsuch/wearos-windows-bridge
 - Wireless debugging enabled on the watch
 - PowerShell, available by default on supported Windows versions
 
-## New to Batch Files?
+## Getting Started
 
 A `.bat` file is a small script that Windows runs like a program. To use this helper:
 
-1. Double-click `wearos-windows-bridge.bat` (or right-click it and choose **Open**) to launch it. A black console window will open with a numbered menu.
+1. Double-click `wearos-windows-bridge.bat` (or right-click it and choose **Open**) to launch it. A console window will open with a numbered menu.
 2. If Windows shows a **Windows protected your PC** SmartScreen warning, click **More info**, then **Run anyway**. This warning is common for downloaded batch files; before running it, confirm you downloaded it from the expected repository or a trusted source.
-3. Type the number of the menu option you want and press Enter. Follow the on-screen prompts.
+3. Type the number of the menu option you want and press Enter. Follow the on-screen prompts. Close the console window to quit.
 4. To type a folder or file path when asked, you can drag the file/folder from File Explorer directly into the console window instead of typing it out.
-5. Press `Ctrl+C` to cancel a running command (such as Live Watch Logs), or close the window at any time to quit.
+5. Press `Ctrl+C` to cancel a running command (such as Live Watch Logs).
 
 ## First Run
 
@@ -28,9 +28,9 @@ A `.bat` file is a small script that Windows runs like a program. To use this he
 2. Run `wearos-windows-bridge.bat`.
 3. Select **1. Setup scrcpy System Path**.
 4. Drag and drop the folder containing both `scrcpy.exe` and `adb.exe` into the window, or type/paste its path.
-5. Restart any separate Command Prompt windows if necessary.
+5. This makes the tools available for the current bridge session. If the scrcpy folder is not already on your Windows PATH, repeat this step the next time you launch the bridge.
 
-The helper adds the folder to the current user's PATH. It does not modify the system-wide PATH.
+The helper does not modify your permanent user or system PATH.
 
 ## Enable Developer Options and Wireless Debugging
 
@@ -53,49 +53,33 @@ On the watch:
 3. Note the IP address and pairing port shown in the pairing screen.
 4. Note the six-digit number at the top labeled **Wi-Fi pairing code**.
 
-In the helper, select **2. First Time Setup: Pair Watch via Wi-Fi** and enter those values when prompted.
+In the helper, select **2. Pair Watch via Wi-Fi** and enter those values when prompted. Pairing saves the watch IP and pairing port for the active profile; it does not mean the watch is currently connected.
 
 Pairing and connection use different ports. The pairing port is shown after selecting **Pair new device**. The connection port is shown on the main **Wireless Debugging** screen.
 
 ## Connect to the Watch
 
 1. Return to the main **Wireless Debugging** screen on the watch.
-2. Select **3. Connect to Watch**.
-3. If the saved watch is unavailable, the helper will check which authorized devices are currently visible through ADB and offer the active one automatically.
-4. Use the saved IP address when offered, or enter it manually.
-5. Enter the connection port shown after the colon on the main screen.
+2. In the helper, select **3. Connect to Watch**.
+3. Enter the watch IP address and the connection port shown on the main Wireless Debugging screen. Leave the IP blank to use the saved IP. The connection port can change when Wireless Debugging restarts.
 
-The helper saves the IP address and connection ports in `ip_cache.txt`. This file is local-only and is ignored by Git.
+The helper saves the IP address and ports in `ip_cache.txt` and in the active profile. These are local settings and are ignored by Git.
 
-If the first connection attempt is stale, offline, or waiting for watch approval, the helper retries up to three times. It restarts its local ADB server once during recovery and lets you enter a replacement connection port if the watch regenerated it. Press Enter to retry the current port. The helper preserves the previous saved connection if all attempts fail.
-
-## Device Overview and Recovery
-
-The bottom of the main menu shows a live device overview with counts for authorized, unauthorized, and offline watches detected by ADB. The menu labels saved pairing and connection details as cached information rather than claiming that the watch is currently paired or connected. If the saved watch is not currently active, the helper now automatically checks the visible authorized devices, resolves mDNS device names to their actual IP address and port, and offers the correct one before falling back to manual entry.
-
-If you select **3. Connect to Watch** before pairing a watch through the helper, it explains that pairing is required and directs you to **2. First Time Setup: Pair Watch via Wi-Fi**.
+The bridge starts the ADB server before attempting a connection and retries unsuccessful connections. The menu reports pairing from saved settings and connection from the live ADB device list, so a saved pairing can remain even when the watch is offline.
 
 ## Screen Mirroring
 
-After connecting, select **4. Launch Screen Mirroring**. The helper passes the saved `IP:connection-port` to scrcpy so duplicate ADB entries, including mDNS entries, do not cause an ambiguous-device error.
+After connecting, select **4. Launch Screen Mirroring**. The helper reconnects to the saved `IP:connection-port` and passes that endpoint to scrcpy.
 
 ## Sideload an APK
 
-After connecting, select **5. Sideload an APK File**, then drag an APK file into the window and press Enter. The APK is installed on the selected watch with replacement and runtime permissions enabled.
+After connecting, select **5. Sideload an APK File**, then enter or drag an APK file path into the window and press Enter. The bridge checks the connection, displays install progress, and reports ADB's install result. The APK is installed on the selected watch with replacement and runtime permissions enabled.
 
-The install uses the saved direct ADB connection and disables streamed installation for better reliability over wireless debugging.
-
-## Bulk Sideload an APK to Multiple Watches
-
-Select **6. Bulk Sideload APK (All Connected Devices)** to install one APK across every watch `adb` currently sees in the `device` (authorized) state, without connecting to each one individually first.
-
-Each watch must already be paired with this PC at least once (see **2. First Time Setup**) and have Wireless Debugging turned on while on the same network; already-paired watches are typically auto-discovered by `adb` over mDNS and require no manual Connect step. Run `adb devices` yourself first if you want to confirm which watches will be targeted.
-
-The helper lists every detected serial, then installs the chosen APK to each in turn with the same flags as single-device sideloading (`-r -g --no-streaming`), printing a per-device result and a final success/failure summary.
+The install uses the saved direct ADB connection and disables streamed installation for better reliability over wireless debugging. If the watch disconnects during installation, wake it, enable Wireless Debugging, reconnect, and retry if ADB did not report `Success`.
 
 ## View Live Watch Logs
 
-After connecting, select **7. Live Watch Logs** to stream new log lines to the console while saving them to a timestamped file. Enter an optional keyword to show and save only matching lines, or press Enter to see all logs. Keywords may contain letters, numbers, periods, underscores, and hyphens, such as `weartak` or `takserver.aftakcoe.org`.
+After connecting, select **6. Live Watch Logs** to stream new log lines to the console while saving them to a timestamped file. Enter an optional keyword to show and save only matching lines, or press Enter to see all logs. Keywords may contain letters, numbers, periods, underscores, and hyphens, such as `weartak` or `takserver.aftakcoe.org`.
 
 Reproduce the issue while the stream is running, then press `Ctrl+C` to stop capture and return to the menu.
 
@@ -109,28 +93,7 @@ When no keyword is supplied, the filename uses `none`.
 
 The log is written directly to `watch_logs\` as it streams, using a temporary `..._inprogress.txt` name that is renamed to include the end time once capture stops. This means a capture is never stranded elsewhere if the window is closed or the batch job is terminated mid-stream.
 
-The `watch_logs` folder is ignored by Git because logs may contain device, application, or user data. Share a log only after reviewing it for sensitive information. Select **8. Open Logs Folder** from the main menu at any time to open this folder in File Explorer.
-
-## Reset
-
-Select **9. Reset ADB Server / Clear Status** to:
-
-- Stop the ADB server
-- Clear the saved IP and port values
-- Delete `ip_cache.txt`
-- Clear the local PATH-setup marker
-
-You'll be asked to type `CONFIRM` before anything is cleared. The reset targets the ADB process associated with the helper's configured `adb.exe`; it does not remove the scrcpy folder from the user PATH, unpair the watch, remove installed apps, or delete ADB keys.
-
-## Diagnose and Export Support Data
-
-Select **10. Diagnose Environment** to check the local ADB and scrcpy setup, PATH visibility, and detected device states. Select **11. Export Diagnostic Bundle** to create a zip containing environment details, ADB state, saved connection metadata, and local logs for troubleshooting. Review the contents for sensitive information before sharing the zip.
-
-## Report an Issue
-
-Select **12. Report an Issue** to open a browser to file an issue on GitHub (https://github.com/aegorsuch/wearos-windows-bridge/issues). Enter the step number that had the problem and a description of what happened; the helper pre-fills the issue title and description with your answers.
-
-Option **13. Exit** closes the helper without resetting anything.
+The `watch_logs` folder is ignored by Git because logs may contain device, application, or user data. Open `watch_logs` beside the bridge files in File Explorer to review captures. Share a log only after checking it for sensitive information.
 
 ## Local Files
 
@@ -138,6 +101,8 @@ The helper creates these local files beside the batch file:
 
 - `ip_cache.txt` - saved watch IP and ports; ignored by Git
 - `path_configured.txt` - local marker indicating PATH setup was completed; ignored by Git
+- `watch_profiles.json` and `active_profile.txt` - saved watch profiles and the selected profile; ignored by Git
+- `watch_logs/` - captured logs; ignored by Git
 
 The six-digit pairing code is used only during pairing and is not saved.
 
@@ -159,32 +124,31 @@ If you do want to manage profiles, either use the menu flow or the command-line 
 
 The `default` profile cannot be deleted, but you can create and switch to other names like `ODIN-WEARTAK` or `ODIN-WEARTAK-4` for separate devices. For a quick menu-based removal, enter `DELETE NAME` in the profile management prompt.
 
-### Developer mode
+### Developer Tools
 
-Most users can ignore all of the advanced features. If you want the more experimental or power-user options, launch the tool in developer mode:
+Developer Tools is always available as **7. Developer Tools** on the main menu. It contains:
 
-- `wearos-windows-bridge.bat --dev-mode`
-- or set `WEAROS_DEV_MODE=1` in your shell before launching it
+- **Manage Profiles** - create, switch, and delete saved watch profiles.
+- **Bulk Sideload APK** - install an APK to all currently authorized ADB devices.
+- **Diagnose Environment** - show ADB, scrcpy, profile, and device information.
+- **Export Diagnostic Bundle** - currently a placeholder; bundle export is not implemented yet.
+- **Pair + Connect + Mirror** - run the pairing, connection, and mirroring flow.
 
-When developer mode is enabled, these options appear under a dedicated developer menu:
+Profiles are optional. For more than one watch, create a profile for each device (for example, `ODIN-WEARTAK` and `ODIN-WEARTAK-4`) and switch profiles before pairing or connecting. Each profile stores its own IP and ports. The `default` profile cannot be deleted.
 
-- profiles
-- bulk sideload
-- diagnose environment
-- diagnostic bundle export
-- pair + connect + mirror
+The bulk sideload action targets every ADB device currently in the authorized `device` state. Check the listed devices before using it if more than one watch or Android device is connected.
 
 ### Structured status output
 
-The PowerShell script exposes a `--status-json` route for scripts or automation. This returns the active profile, saved IP/port values, and the current device summary in JSON, which makes it easier to build dashboards or integrations.
+The PowerShell script exposes `--status-json` for scripts or automation. It returns installation/configuration flags, saved pairing and connection state, the active profile, profile settings, and the current ADB device summary as JSON.
 
 ### Self-healing ADB recovery
 
-The PowerShell core includes a recovery path that kills stale `adb.exe` processes and restarts the local ADB server before retrying failed connections. This helps when another Android tool has left a conflicting ADB server running, or when a saved port is stale.
+The PowerShell core starts the local ADB server before wireless connection attempts and retries failed connections. Pairing failures also trigger ADB recovery. The connection port shown in Wireless Debugging can change, so update it when reconnecting if needed.
 
 ### One-click pair + connect + mirror
 
-Use the `--pair-connect-mirror` command to do a full quick-start flow in one action: pair a watch, connect to it, and launch scrcpy immediately when the watch is available.
+Use **7. Developer Tools > 5. Pair + Connect + Mirror** for the guided flow, or run `wearos-windows-bridge.bat --pair-connect-mirror` for the command-line flow. The command prompts for any values not supplied as arguments.
 
 ## Troubleshooting
 
@@ -198,15 +162,15 @@ Confirm that Wireless Debugging and **Pair new device** are open on the watch, t
 
 ### Connection fails
 
-Use the port from the main Wireless Debugging screen, not the pairing port. If the first connection attempt fails and the watch shows a different port, enter that new port when prompted. Confirm the PC and watch are on the same network.
+Use the port from the main Wireless Debugging screen, not the pairing port. Enter the current IP address and connection port in **3. Connect to Watch**. The connection port can change when Wireless Debugging restarts. Confirm the PC and watch are on the same network and keep the watch awake while connecting or installing.
 
 ### Watch shows "unauthorized"
 
-If the watch's screen has an "Allow debugging?" prompt, confirm it there, then reconnect. The helper detects this case and asks if you want to retry.
+If ADB reports the watch as `unauthorized`, confirm the **Allow debugging?** prompt on the watch, then connect again.
 
 ### "adb server is out of date" or devices behave inconsistently
 
-If another program that bundles its own `adb.exe` is also installed (for example Android Studio), it can start a conflicting adb server on the same port. Close other adb-based tools, or run **9. Reset ADB Server / Clear Status** to stop the ADB process associated with this helper before reconnecting. If pairing fails with a "protocol fault" style error, the helper restarts the adb server for you — reopen "Pair new device" on the watch for a fresh code and port, then select **2. First Time Setup: Pair Watch via Wi-Fi** again. If it keeps failing the same way, use the reset option and pair again.
+If another program that bundles its own `adb.exe` is also installed (for example Android Studio), it can start a conflicting ADB server on the same port. Close other ADB-based tools and retry. If pairing fails with a protocol-fault error, the bridge attempts ADB recovery; reopen **Pair new device** on the watch for a fresh code and port, then retry **2. Pair Watch via Wi-Fi**.
 
 ### Text entry through scrcpy does not save
 
