@@ -4,6 +4,20 @@ A Windows command-line helper for pairing a Wear OS watch over Wi-Fi, connecting
 
 Repository: https://git.tak.gov/aegorsuch/wearos-windows-bridge
 
+## Project Information
+
+### Rights
+
+Unlimited Rights granted to TAK Product Center.
+
+### Point of Contact
+
+Alex Gorsuch on chat.tak.gov or Signal.
+
+### Repositories
+
+TAK Forge is the canonical repository. GitHub is a secondary repository.
+
 ## Requirements
 
 - Windows 10 or later
