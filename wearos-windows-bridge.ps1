@@ -370,7 +370,14 @@ function Recover-Adb {
     }
 
     Write-UiLine "Recovering ADB: $Reason" -Color Yellow
-    & $Adb kill-server *> $null 2>&1
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $Adb kill-server *> $null
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
 
     $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'adb.exe' }
     foreach ($process in $processes) {
@@ -383,7 +390,13 @@ function Recover-Adb {
     }
 
     Start-Sleep -Seconds 1
-    & $Adb start-server *> $null 2>&1
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $Adb start-server *> $null
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
 }
 
 function Get-DeviceEntries {
@@ -767,8 +780,26 @@ function Invoke-PairWatch {
         throw 'ADB is required but was not found.'
     }
 
-    $raw = & $Adb pair "${Ip}:$PairPort" $PairCode 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) {
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $Adb start-server *> $null
+        $startExitCode = $LASTEXITCODE
+        if ($startExitCode -eq 0) {
+            $raw = & $Adb pair "${Ip}:$PairPort" $PairCode 2>&1 | Out-String
+            $pairExitCode = $LASTEXITCODE
+        }
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    if ($startExitCode -ne 0) {
+        Write-UiLine 'ADB server failed to start. Close other ADB-based tools and try again.' -Color Red
+        return $false
+    }
+
+    if ($pairExitCode -ne 0) {
         Write-UiLine $raw -Color Red
         Recover-Adb -Reason 'pairing failed'
         return $false
@@ -971,8 +1002,13 @@ function Show-Menu {
             $pairPort = Read-Host 'Enter Pairing Port'
             $pairCode = Read-Host 'Enter 6-digit Pairing Code'
             if ($ip -and $pairPort -and $pairCode) {
-                $ok = Invoke-PairWatch -Ip $ip -PairPort $pairPort -PairCode $pairCode
-                if ($ok) { Write-UiLine 'Pairing succeeded.' -Color Green } else { Write-UiLine 'Pairing failed.' -Color Red }
+                try {
+                    $ok = Invoke-PairWatch -Ip $ip -PairPort $pairPort -PairCode $pairCode
+                    if ($ok) { Write-UiLine 'Pairing succeeded.' -Color Green } else { Write-UiLine 'Pairing failed.' -Color Red }
+                }
+                catch {
+                    Write-UiLine "Pairing failed: $($_.Exception.Message)" -Color Red
+                }
             }
             Show-Menu
         }
