@@ -79,7 +79,7 @@ Pairing and connection use different ports. The pairing port is shown after sele
 
 The helper saves the IP address and ports in `ip_cache.txt` and in the active profile. These are local settings and are ignored by Git.
 
-The bridge starts the ADB server before attempting a connection and retries unsuccessful connections. The menu reports pairing from saved settings and connection from the live ADB device list, so a saved pairing can remain even when the watch is offline.
+The bridge starts the ADB server before attempting pairing or connection and retries unsuccessful connections. The menu reports pairing from saved settings and connection from the live ADB device list, so a saved pairing can remain even when the watch is offline.
 
 ## Screen Mirroring
 
