@@ -16,6 +16,135 @@ function Write-UiLine {
     Write-Host $Message -ForegroundColor $Color
 }
 
+function Get-AdbCommandPaths {
+    $matches = @(Get-Command adb.exe -All -ErrorAction SilentlyContinue)
+    $paths = @()
+
+    foreach ($match in $matches) {
+        $value = if ($match.Source) { $match.Source } elseif ($match.Definition) { $match.Definition } else { $null }
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            $paths += $value
+        }
+    }
+
+    return @($paths | Select-Object -Unique)
+}
+
+function Get-AdbHealthWarning {
+    $warning = [ordered]@{
+        conflictDetected = $false
+        message = ''
+        advice = ''
+        paths = @()
+    }
+
+    $paths = @(Get-AdbCommandPaths)
+    if ($paths.Count -gt 1) {
+        $warning.conflictDetected = $true
+        $warning.paths = $paths
+        $warning.message = "Multiple adb.exe paths were detected on PATH: $($paths -join '; ')"
+        $warning.advice = 'Close other ADB-based tools such as Android Studio, then retry. If needed, remove the extra adb.exe from PATH or launch the bridge from a clean shell.'
+    }
+
+    $Adb = Get-AdbExecutable
+    if (-not $Adb) {
+        return [pscustomobject]$warning
+    }
+
+    $raw = @()
+    try {
+        $raw += (& $Adb version 2>&1 | Out-String)
+    }
+    catch {
+        $raw += $_.Exception.Message
+    }
+
+    try {
+        $raw += (& $Adb devices 2>&1 | Out-String)
+    }
+    catch {
+        $raw += $_.Exception.Message
+    }
+
+    $combined = ($raw -join "`n")
+    if ($combined -match 'adb server is out of date|unable to connect to adb|failed to start daemon|internal error') {
+        $warning.message = $combined.Trim()
+        $warning.advice = 'ADB is reporting a server conflict or stale daemon. Close other ADB-based tools, then retry pairing or connection.'
+        $warning.conflictDetected = $true
+    }
+
+    return [pscustomobject]$warning
+}
+
+function Write-AdbHealthWarning {
+    $warning = Get-AdbHealthWarning
+    if (-not $warning.conflictDetected) {
+        return
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($warning.message)) {
+        Write-UiLine $warning.message -Color Yellow
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($warning.advice)) {
+        Write-UiLine $warning.advice -Color Yellow
+    }
+}
+
+function Get-ConnectionFailureAdvice {
+    param(
+        [string]$Ip,
+        [string]$Port,
+        [string]$State = 'unknown'
+    )
+
+    $message = [System.Collections.Generic.List[string]]::new()
+
+    switch ($State) {
+        'unauthorized' {
+            $message.Add("The watch at ${Ip}:${Port} is paired but not yet authorized by ADB.")
+            $message.Add('Accept the debugging prompt on the watch and retry the connection.')
+        }
+        'offline' {
+            $message.Add("The device at ${Ip}:${Port} is offline or unreachable.")
+            $message.Add('Keep the watch awake and confirm it is connected to the same Wi-Fi network.')
+        }
+        'not-found' {
+            $message.Add("ADB does not currently see ${Ip}:${Port}.")
+            $message.Add('Confirm the port is the main Wireless Debugging connection port, not the pairing port.')
+        }
+        default {
+            $message.Add("Connection to ${Ip}:${Port} failed.")
+            $message.Add('Check that the watch is awake, the Wi-Fi network is reachable, and the port matches the Wireless Debugging screen.')
+        }
+    }
+
+    $message.Add('If you see "adb server is out of date", close other ADB-based tools such as Android Studio, then retry.')
+    return ($message -join ' ')
+}
+
+function Invoke-ConnectionRecovery {
+    param(
+        [string]$Ip,
+        [string]$Port,
+        [string]$Reason = 'connection recovery'
+    )
+
+    $state = Get-DeviceStateByTarget -Ip $Ip -Port $Port
+    Write-UiLine "Connection state for ${Ip}:${Port} is '$state'. Recovering ADB for $Reason." -Color Yellow
+
+    if ($state -eq 'unauthorized') {
+        Write-UiLine 'The device is unauthorized. Accept the debugging prompt on the watch before retrying.' -Color Yellow
+    }
+    elseif ($state -eq 'offline' -or $state -eq 'not-found') {
+        Write-UiLine 'The watch is not reachable over ADB. Confirm the connection port, network, and wake state, then retry.' -Color Yellow
+    }
+
+    Recover-Adb -Reason $Reason
+    Start-Sleep -Seconds 1
+    return $true
+}
+
 function Get-AdbExecutable {
     $cmd = Get-Command adb.exe -ErrorAction SilentlyContinue
     if ($cmd) {
@@ -584,6 +713,8 @@ function Connect-Watch {
         throw 'Both IP and port are required.'
     }
 
+    Write-AdbHealthWarning
+
     try {
         & $Adb start-server *> $null
     }
@@ -600,19 +731,42 @@ function Connect-Watch {
             # `adb disconnect` can emit benign startup text while its daemon starts.
         }
 
+        $raw = ''
         try {
             $raw = & $Adb connect "${Ip}:$Port" 2>&1 | Out-String
         }
         catch {
-            # Check the device list anyway: ADB can connect successfully while emitting daemon startup text on stderr.
             $raw = $_.Exception.Message
         }
 
         $state = Get-DeviceStateByTarget -Ip $Ip -Port $Port
-        if ($state -match 'device|unauthorized') {
+        if ($state -eq 'device') {
             Save-IpCache -Ip $Ip -PairPort (Load-IpCache).pairPort -ConnPort $Port
             Save-CurrentProfileFromState -Ip $Ip -PairPort (Load-IpCache).pairPort -ConnPort $Port
             return $true
+        }
+
+        if ($state -eq 'unauthorized') {
+            Write-UiLine "The watch at ${Ip}:${Port} is unauthorized. Accept the debugging prompt on the watch and retry." -Color Yellow
+            Invoke-ConnectionRecovery -Ip $Ip -Port $Port -Reason 'unauthorized device'
+            if ($attempt -lt $Retries) {
+                Start-Sleep -Seconds 2
+            }
+            continue
+        }
+
+        if ($state -eq 'offline' -or $state -eq 'not-found') {
+            Write-UiLine "The watch at ${Ip}:${Port} is not currently reachable over ADB. Check the Wi-Fi network and the current Wireless Debugging port, then retry." -Color Yellow
+            Invoke-ConnectionRecovery -Ip $Ip -Port $Port -Reason 'target not reachable'
+            if ($attempt -lt $Retries) {
+                Start-Sleep -Seconds 2
+            }
+            continue
+        }
+
+        if ($raw -match 'adb server is out of date|unable to connect to adb|failed to start daemon|cannot connect') {
+            Write-UiLine 'ADB reported a daemon or server conflict. Recovering the server and retrying the connection.' -Color Yellow
+            Invoke-ConnectionRecovery -Ip $Ip -Port $Port -Reason 'ADB server conflict during connect'
         }
 
         if ($attempt -lt $Retries) {
@@ -620,6 +774,8 @@ function Connect-Watch {
         }
     }
 
+    $finalState = Get-DeviceStateByTarget -Ip $Ip -Port $Port
+    Write-UiLine (Get-ConnectionFailureAdvice -Ip $Ip -Port $Port -State $finalState) -Color Red
     return $false
 }
 
@@ -641,7 +797,8 @@ function Invoke-Mirror {
 
     $connected = Connect-Watch -Ip $cache.ip -Port $cache.connPort -Retries 2
     if (-not $connected) {
-        throw "Unable to connect to $($cache.ip):$($cache.connPort) before mirroring."
+        $state = Get-DeviceStateByTarget -Ip $cache.ip -Port $cache.connPort
+        throw "Unable to connect to $($cache.ip):$($cache.connPort) before mirroring. $(Get-ConnectionFailureAdvice -Ip $cache.ip -Port $cache.connPort -State $state)"
     }
 
     & $Scrcpy --serial="$($cache.ip):$($cache.connPort)" --max-size=360 --video-bit-rate=1M
@@ -667,7 +824,8 @@ function Invoke-Sideload {
     Write-UiLine "Checking connection to $($cache.ip):$($cache.connPort)..." -Color Yellow
     $connected = Connect-Watch -Ip $cache.ip -Port $cache.connPort -Retries 2
     if (-not $connected) {
-        throw "Unable to connect to $($cache.ip):$($cache.connPort) before installing."
+        $state = Get-DeviceStateByTarget -Ip $cache.ip -Port $cache.connPort
+        throw "Unable to connect to $($cache.ip):$($cache.connPort) before installing. $(Get-ConnectionFailureAdvice -Ip $cache.ip -Port $cache.connPort -State $state)"
     }
 
     Write-UiLine "Installing $(Split-Path -Leaf $ApkPath) to $($cache.ip):$($cache.connPort)..." -Color Yellow
@@ -987,7 +1145,11 @@ function Show-Menu {
 
     switch ($choice) {
         '1' {
-            $folder = Read-Host 'Drag and drop or enter full path to scrcpy folder'
+            Write-UiLine 'scrcpy is the open-source screen-mirroring tool used to display a Wear OS watch on Windows.' -Color Cyan
+            Write-UiLine 'Download the latest scrcpy-win64 release from https://github.com/Genymobile/scrcpy/releases' -Color Cyan
+            Write-UiLine 'Extract it and choose the folder that contains both scrcpy.exe and adb.exe.' -Color Cyan
+            Write-UiLine 'This only configures the current bridge session; it does not change your permanent Windows PATH.' -Color Cyan
+            $folder = Read-Host 'Drag and drop or enter full path to the scrcpy folder'
             if ([string]::IsNullOrWhiteSpace($folder)) { return }
             try {
                 Set-ScrcpyPathFromFolder -Folder $folder
