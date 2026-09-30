@@ -968,6 +968,108 @@ function Invoke-PairWatch {
     return $true
 }
 
+function New-GitHubIssueUrl {
+    param(
+        [string]$Step = 'general',
+        [string]$ErrorText = '',
+        [string]$AdditionalContext = ''
+    )
+
+    $baseUrl = 'https://github.com/aegorsuch/wearos-windows-bridge/issues/new'
+    $cache = Load-IpCache
+    $profile = Get-CurrentProfile
+    $adb = Get-AdbExecutable
+    $scrcpy = Get-ScrcpyExecutable
+    $deviceSummary = Get-DeviceEntries
+
+    $body = @()
+    $body += '## Problem details'
+    $body += "- Step: $Step"
+    $body += "- Active profile: $($profile.name)"
+    $body += "- Saved IP: $($cache.ip)"
+    $body += "- Saved pair port: $(if ([string]::IsNullOrWhiteSpace($cache.pairPort)) { 'None' } else { $cache.pairPort })"
+    $body += "- Saved connection port: $(if ([string]::IsNullOrWhiteSpace($cache.connPort)) { 'None' } else { $cache.connPort })"
+    $body += "- ADB installed: $(if ($adb) { 'Yes' } else { 'No' })"
+    $body += "- scrcpy installed: $(if ($scrcpy) { 'Yes' } else { 'No' })"
+    if ($deviceSummary.Count -gt 0) {
+        $body += '- Detected devices:'
+        foreach ($entry in $deviceSummary) {
+            $body += "  - $($entry.serial): $($entry.state)"
+        }
+    }
+    else {
+        $body += '- Detected devices: none'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($AdditionalContext)) {
+        $body += ''
+        $body += '## Additional context'
+        $body += $AdditionalContext.Trim()
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ErrorText)) {
+        $body += ''
+        $body += '## Error text'
+        $body += $ErrorText.Trim()
+    }
+
+    $title = "Bug report: $Step"
+    $encodedTitle = [System.Net.WebUtility]::UrlEncode($title)
+    $encodedBody = [System.Net.WebUtility]::UrlEncode(($body -join "`r`n"))
+    return "$baseUrl?title=$encodedTitle&body=$encodedBody"
+}
+
+function Open-IssueReporter {
+    param(
+        [string]$DefaultStep = 'general',
+        [string]$ErrorText = ''
+    )
+
+    Write-UiLine ''
+    Write-UiLine 'REPORT A BUG' -Color Cyan
+    Write-UiLine '---------------------------------------------------' -Color DarkCyan
+    Write-UiLine 'Select the stage where the problem happened:' -Color Yellow
+    Write-UiLine '  1. Pairing'
+    Write-UiLine '  2. Connection'
+    Write-UiLine '  3. Screen mirroring'
+    Write-UiLine '  4. APK install'
+    Write-UiLine '  5. Log capture'
+    Write-UiLine '  6. Crash or startup failure'
+    Write-UiLine '  7. Other'
+    Write-UiLine '  8. Cancel'
+
+    $choice = Read-Host 'Choose an option (1-8)'
+    $stepMap = @{
+        '1' = 'pairing'
+        '2' = 'connection'
+        '3' = 'mirroring'
+        '4' = 'install'
+        '5' = 'logs'
+        '6' = 'crash'
+        '7' = 'other'
+        '8' = $null
+    }
+
+    if (-not $stepMap.ContainsKey($choice)) {
+        return
+    }
+
+    $selectedStep = $stepMap[$choice]
+    if ($null -eq $selectedStep) {
+        return
+    }
+
+    $description = Read-Host 'Give a short description of what happened'
+    $errorDetail = if ([string]::IsNullOrWhiteSpace($ErrorText)) { Read-Host 'Paste any error text or leave blank' } else { $ErrorText }
+    $url = New-GitHubIssueUrl -Step $selectedStep -ErrorText $errorDetail -AdditionalContext $description
+
+    Write-UiLine "Opening the bug report form for the $selectedStep step..." -Color Green
+    try {
+        Start-Process $url
+    }
+    catch {
+        Write-UiLine "Open this link manually in your browser: $url" -Color Yellow
+    }
+}
+
 function Show-Help {
     Write-UiLine 'WearOS Windows Bridge command-line options' -Color Cyan
     Write-UiLine '---------------------------------------------------' -Color DarkCyan
@@ -1001,10 +1103,11 @@ function Show-DevMenu {
     Write-Host '  3. Diagnose Environment'
     Write-Host '  4. Export Diagnostic Bundle'
     Write-Host '  5. Pair + Connect + Mirror'
-    Write-Host '  6. Back to main menu'
+    Write-Host '  6. Report a Bug'
+    Write-Host '  7. Back to main menu'
     Write-Host '===================================================' -ForegroundColor DarkGreen
 
-    $choice = Read-Host 'Select an option (1-6)'
+    $choice = Read-Host 'Select an option (1-7)'
     switch ($choice) {
         '1' {
             $profiles = Load-ProfileStore
@@ -1084,6 +1187,10 @@ function Show-DevMenu {
             Show-DevMenu
         }
         '6' {
+            Open-IssueReporter
+            Show-DevMenu
+        }
+        '7' {
             Show-Menu
         }
         default {
@@ -1140,8 +1247,9 @@ function Show-Menu {
     Write-Host ''
     Write-Host '  --- Developer ---'
     Write-Host '  7. Developer Tools'
+    Write-Host '  8. Report a Bug'
     Write-Host '===================================================' -ForegroundColor DarkGreen
-    $choice = Read-Host 'Select an option (1-7)'
+    $choice = Read-Host 'Select an option (1-8)'
 
     switch ($choice) {
         '1' {
@@ -1239,6 +1347,10 @@ function Show-Menu {
         '7' {
             Show-DevMenu
         }
+        '8' {
+            Open-IssueReporter
+            Show-Menu
+        }
         default {
             Show-Menu
         }
@@ -1248,27 +1360,28 @@ function Show-Menu {
 function Main {
     param([string[]]$ScriptArgs = @())
 
-    if ($ScriptArgs.Count -eq 0) {
-        Show-Menu
-        return
-    }
-
-    $firstArg = $ScriptArgs[0]
-    if (-not $firstArg.StartsWith('--')) {
-        try {
-            Set-ScrcpyPathFromFolder -Folder $firstArg
+    try {
+        if ($ScriptArgs.Count -eq 0) {
+            Show-Menu
             return
         }
-        catch {
-            Write-UiLine $_.Exception.Message -Color Red
-            Show-Help
-            exit 1
+
+        $firstArg = $ScriptArgs[0]
+        if (-not $firstArg.StartsWith('--')) {
+            try {
+                Set-ScrcpyPathFromFolder -Folder $firstArg
+                return
+            }
+            catch {
+                Write-UiLine $_.Exception.Message -Color Red
+                Show-Help
+                exit 1
+            }
         }
-    }
 
-    $command = $firstArg.ToLowerInvariant()
+        $command = $firstArg.ToLowerInvariant()
 
-    switch ($command) {
+        switch ($command) {
         '--help' {
             Show-Help
             return
@@ -1429,11 +1542,21 @@ function Main {
                 exit 1
             }
         }
-        default {
-            Write-UiLine "Unsupported command-line option: $($ScriptArgs[0])" -Color Red
-            Show-Help
-            exit 1
+            default {
+                Write-UiLine "Unsupported command-line option: $($ScriptArgs[0])" -Color Red
+                Show-Help
+                exit 1
+            }
         }
+    }
+    catch {
+        Write-UiLine "The bridge hit an unexpected error: $($_.Exception.Message)" -Color Red
+        Write-UiLine 'You can open a prefilled bug report to help us fix it.' -Color Yellow
+        $reportChoice = Read-Host 'Open GitHub issue now? (Y/N)'
+        if ($reportChoice -match '^(?i)y(es)?$') {
+            Open-IssueReporter -DefaultStep 'crash' -ErrorText $_.Exception.Message
+        }
+        exit 1
     }
 }
 

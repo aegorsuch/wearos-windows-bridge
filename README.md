@@ -18,6 +18,10 @@ Alex Gorsuch on chat.tak.gov or Signal.
 
 TAK Forge is the canonical repository. GitHub is a secondary repository.
 
+### Report a Bug
+
+If the helper fails, crashes, or behaves unexpectedly, open a GitHub issue at https://github.com/aegorsuch/wearos-windows-bridge/issues and include the stage of the flow that failed, the exact error text, and the watch model or device state when possible. The tool's menu also includes a bug-report option to open a prefilled issue form.
+
 ## Requirements
 
 - Windows 10 or later
