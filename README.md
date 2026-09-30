@@ -74,6 +74,8 @@ On the watch:
 
 Before pairing, make sure the watch and the Windows PC are connected to the same Wi-Fi network. They must be able to reach each other over that network.
 
+The **IP address** identifies the watch on the network, for example `192.168.1.33`. Enter the IP address by itself; do not append the port. The **pairing port** is a separate number, such as `41131`, shown on the watch's pairing screen. Enter both values exactly, and do not use the connection port for pairing.
+
 1. Open **Developer Options > Wireless Debugging**.
 2. Select **Pair new device**.
 3. Note the IP address and pairing port shown in the pairing screen.

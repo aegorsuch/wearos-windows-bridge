@@ -1112,6 +1112,30 @@ function Open-IssueReporter {
     }
 }
 
+function Get-PairInputError {
+    param(
+        [string]$Ip,
+        [string]$PairPort,
+        [string]$PairCode
+    )
+
+    $address = $null
+    if ([string]::IsNullOrWhiteSpace($Ip) -or $Ip -match '\s' -or -not [System.Net.IPAddress]::TryParse($Ip, [ref]$address) -or $Ip -match ':') {
+        return 'Enter the watch IP address only, such as 192.168.1.33. Do not add the pairing port to the IP address.'
+    }
+
+    $portNumber = 0
+    if (-not [int]::TryParse($PairPort, [ref]$portNumber) -or $portNumber -lt 1 -or $portNumber -gt 65535) {
+        return 'Enter the pairing port as numbers only, such as 41131.'
+    }
+
+    if ($PairCode -notmatch '^\d{6}$') {
+        return 'Enter the six-digit Wi-Fi pairing code shown on the watch.'
+    }
+
+    return $null
+}
+
 function Show-Help {
     Write-UiLine 'WearOS Windows Bridge command-line options' -Color Cyan
     Write-UiLine '---------------------------------------------------' -Color DarkCyan
@@ -1323,10 +1347,14 @@ function Show-Menu {
             Show-Menu
         }
         '2' {
-            $ip = Read-Host 'Enter Watch IP Address'
-            $pairPort = Read-Host 'Enter Pairing Port'
-            $pairCode = Read-Host 'Enter 6-digit Pairing Code'
-            if ($ip -and $pairPort -and $pairCode) {
+            $ip = Read-Host 'Enter Watch IP Address only (example: 192.168.1.33; do not include the port)'
+            $pairPort = Read-Host 'Enter Pairing Port only (example: 41131; numbers only)'
+            $pairCode = Read-Host 'Enter 6-digit Pairing Code (example: 952775)'
+            $pairInputError = Get-PairInputError -Ip $ip -PairPort $pairPort -PairCode $pairCode
+            if ($pairInputError) {
+                Write-UiLine "Pairing input error: $pairInputError" -Color Red
+            }
+            else {
                 try {
                     $ok = Invoke-PairWatch -Ip $ip -PairPort $pairPort -PairCode $pairCode
                     if ($ok) { Write-UiLine 'Pairing succeeded.' -Color Green } else { Write-UiLine 'Pairing failed.' -Color Red }
