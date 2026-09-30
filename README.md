@@ -24,7 +24,7 @@ If the helper fails, crashes, or behaves unexpectedly, open a GitHub issue at ht
 
 ## Quick Start
 
-1. Download the project files. You need both `wearos-windows-bridge.bat` and `wearos-windows-bridge.ps1` in the same folder.
+1. Download both project files. In the repository, click `wearos-windows-bridge.bat`, then click the **Download** button in the upper-right corner of the code box. Repeat for `wearos-windows-bridge.ps1`. Keep both downloaded files in the same folder.
 2. Double-click `wearos-windows-bridge.bat`. Run the `.bat` file, not the `.ps1` file. The correct result is a black window showing **WEAROS WINDOWS BRIDGE** and a numbered menu.
 3. If the `.bat` file opens as text, right-click it, choose **Open with**, and select **Windows Command Processor**. Also confirm the filename ends in `.bat`, not `.bat.txt`.
 4. In the menu, select **1. Setup scrcpy System Path** before selecting any watch action.
