@@ -62,7 +62,7 @@ Before pairing, enable the required settings on the watch:
 
 1. From the watch face, swipe down from the top edge of the screen to open the quick panel (the panel with quick settings such as battery, Wi-Fi, and Do Not Disturb).
 2. Tap the **Settings** gear icon, then select **About Watch**.
-3. Select **Software**, then tap **Software Version** repeatedly until the watch displays **Developer mode turned on**.
+3. Select **Software information**, then tap **Software Version** five times until the watch displays **Developer mode turned on**.
 4. Return to the main Settings screen and open **Developer Options**. It is usually at the bottom of the list or just below **About Watch**.
 5. Turn on **ADB Debugging**.
 6. Open **Wireless Debugging** and turn it on.
