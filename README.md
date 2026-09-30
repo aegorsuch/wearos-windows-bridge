@@ -107,7 +107,7 @@ The install uses the saved direct ADB connection and disables streamed installat
 
 ## View Live Watch Logs
 
-After connecting, select **6. Live Watch Logs** to stream new log lines to the console while saving them to a timestamped file. Enter an optional keyword to show and save only matching lines, or press Enter to see all logs. Keywords may contain letters, numbers, periods, underscores, and hyphens, such as `weartak` or `takserver.aftakcoe.org`.
+After connecting, select **6. Live Watch Logs** to stream new log lines immediately to the console while saving them to a timestamped file. Enter an optional keyword to show and save only matching lines, or press Enter to see all logs. The tool will display a message when capture is running. Keywords may contain letters, numbers, periods, underscores, and hyphens, such as `weartak` or `takserver.aftakcoe.org`.
 
 Reproduce the issue while the stream is running, then press `Ctrl+C` to stop capture and return to the menu.
 

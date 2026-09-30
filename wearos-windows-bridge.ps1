@@ -951,19 +951,29 @@ function Invoke-LogsCapture {
     $tag = if ([string]::IsNullOrWhiteSpace($Keyword)) { 'none' } else { $Keyword }
     $fileName = [string]::Format('{0}_{1}_watch_log_{2}_{3}_inprogress.txt', $cache.ip, $cache.connPort, $tag, $startStamp)
     $fullPath = Join-Path $LogsDir $fileName
+    New-Item -Path $fullPath -ItemType File -Force | Out-Null
 
-    $lineSource = & $Adb -s "$($cache.ip):$($cache.connPort)" logcat -v time 2>$null
-    if ([string]::IsNullOrWhiteSpace($Keyword)) {
-        $lineSource | ForEach-Object { $_ | Out-File -FilePath $fullPath -Append -Encoding UTF8 }
+    Write-UiLine "Live log capture is running for $($cache.ip):$($cache.connPort)." -Color Green
+    Write-UiLine 'New matching lines will appear below. Press Ctrl+C to stop and save the log.' -Color Yellow
+
+    try {
+        & $Adb -s "$($cache.ip):$($cache.connPort)" logcat -v time 2>$null | ForEach-Object {
+            $line = [string]$_
+            if ([string]::IsNullOrWhiteSpace($Keyword) -or $line -match [regex]::Escape($Keyword)) {
+                Write-UiLine $line
+                Add-Content -Path $fullPath -Value $line -Encoding UTF8
+            }
+        }
     }
-    else {
-        $lineSource | Where-Object { $_ -match [regex]::Escape($Keyword) } | ForEach-Object { $_ | Out-File -FilePath $fullPath -Append -Encoding UTF8 }
+    finally {
+        if (Test-Path $fullPath -PathType Leaf) {
+            $endStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+            $finalName = [string]::Format('{0}_{1}_watch_log_{2}_{3}_{4}.txt', $cache.ip, $cache.connPort, $tag, $startStamp, $endStamp)
+            $finalPath = Join-Path $LogsDir $finalName
+            Move-Item -Path $fullPath -Destination $finalPath -Force
+        }
     }
 
-    $endStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $finalName = [string]::Format('{0}_{1}_watch_log_{2}_{3}_{4}.txt', $cache.ip, $cache.connPort, $tag, $startStamp, $endStamp)
-    $finalPath = Join-Path $LogsDir $finalName
-    Move-Item -Path $fullPath -Destination $finalPath -Force
     return $finalPath
 }
 
