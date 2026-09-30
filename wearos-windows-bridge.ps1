@@ -1014,7 +1014,7 @@ function New-GitHubIssueUrl {
     $title = "Bug report: $Step"
     $encodedTitle = [System.Net.WebUtility]::UrlEncode($title)
     $encodedBody = [System.Net.WebUtility]::UrlEncode(($body -join "`r`n"))
-    return "$baseUrl?title=$encodedTitle&body=$encodedBody"
+    return "${baseUrl}?title=${encodedTitle}&body=${encodedBody}"
 }
 
 function Open-IssueReporter {
@@ -1254,11 +1254,16 @@ function Show-Menu {
     switch ($choice) {
         '1' {
             Write-UiLine 'scrcpy is the open-source screen-mirroring tool used to display a Wear OS watch on Windows.' -Color Cyan
-            Write-UiLine 'Download the latest scrcpy-win64 release from https://github.com/Genymobile/scrcpy/releases' -Color Cyan
-            Write-UiLine 'Extract it and choose the folder that contains both scrcpy.exe and adb.exe.' -Color Cyan
+            Write-UiLine 'Open this clickable link in your browser (Ctrl+click if required by your terminal): https://github.com/Genymobile/scrcpy/releases' -Color Cyan
+            Write-UiLine 'Download the latest scrcpy-win64 zip and extract it.' -Color Cyan
+            Write-UiLine 'Choose the extracted folder containing both scrcpy.exe and adb.exe.' -Color Cyan
             Write-UiLine 'This only configures the current bridge session; it does not change your permanent Windows PATH.' -Color Cyan
-            $folder = Read-Host 'Drag and drop or enter full path to the scrcpy folder'
-            if ([string]::IsNullOrWhiteSpace($folder)) { return }
+            $folder = Read-Host 'Enter the extracted scrcpy folder path (press Enter to cancel)'
+            if ([string]::IsNullOrWhiteSpace($folder)) {
+                Write-UiLine 'No folder entered; setup canceled. Returning to the menu.' -Color Yellow
+                Show-Menu
+                return
+            }
             try {
                 Set-ScrcpyPathFromFolder -Folder $folder
             }
