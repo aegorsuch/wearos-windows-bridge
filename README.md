@@ -42,7 +42,7 @@ A `.bat` file is a small script that Windows runs like a program. To use this he
 
 ## First Run
 
-1. Download scrcpy from https://github.com/Genymobile/scrcpy/releases (the `scrcpy-win64` zip from the latest release) and extract it to a folder on the PC. `scrcpy` is the open-source screen-mirroring tool used to display your Wear OS watch on Windows; it also includes the `adb.exe` utility used to pair, connect, and install APKs.
+1. Click the scrcpy download link: https://github.com/Genymobile/scrcpy/releases. Download the latest `scrcpy-win64` zip and extract it to a folder on the PC. `scrcpy` is the open-source screen-mirroring tool used to display your Wear OS watch on Windows; it also includes the `adb.exe` utility used to pair, connect, and install APKs.
 2. Run `wearos-windows-bridge.bat`.
 3. Select **1. Setup scrcpy System Path**.
 4. Drag and drop the folder containing both `scrcpy.exe` and `adb.exe` into the window, or type/paste its path. This tells the current bridge session where those tools live so the helper can run them without permanently changing your Windows PATH.
