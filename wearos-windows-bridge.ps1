@@ -91,6 +91,24 @@ function Write-AdbHealthWarning {
     }
 }
 
+function Get-ConfiguredScrcpyFolder {
+    if (-not (Test-Path $PathConfiguredPath -PathType Leaf)) {
+        return $null
+    }
+
+    $folder = (Get-Content -Path $PathConfiguredPath -TotalCount 1 -ErrorAction SilentlyContinue)
+    if ([string]::IsNullOrWhiteSpace($folder) -or $folder -eq 'configured') {
+        return $null
+    }
+
+    $folder = $folder.Trim().Trim('"')
+    if ((Test-Path (Join-Path $folder 'scrcpy.exe') -PathType Leaf) -and (Test-Path (Join-Path $folder 'adb.exe') -PathType Leaf)) {
+        return $folder
+    }
+
+    return $null
+}
+
 function Get-ConnectionFailureAdvice {
     param(
         [string]$Ip,
@@ -146,6 +164,14 @@ function Invoke-ConnectionRecovery {
 }
 
 function Get-AdbExecutable {
+    $configuredFolder = Get-ConfiguredScrcpyFolder
+    if ($configuredFolder) {
+        $configuredAdb = Join-Path $configuredFolder 'adb.exe'
+        if (Test-Path $configuredAdb -PathType Leaf) {
+            return $configuredAdb
+        }
+    }
+
     $cmd = Get-Command adb.exe -ErrorAction SilentlyContinue
     if ($cmd) {
         return $cmd.Source
@@ -165,6 +191,14 @@ function Get-AdbExecutable {
 }
 
 function Get-ScrcpyExecutable {
+    $configuredFolder = Get-ConfiguredScrcpyFolder
+    if ($configuredFolder) {
+        $configuredScrcpy = Join-Path $configuredFolder 'scrcpy.exe'
+        if (Test-Path $configuredScrcpy -PathType Leaf) {
+            return $configuredScrcpy
+        }
+    }
+
     $cmd = Get-Command scrcpy.exe -ErrorAction SilentlyContinue
     if ($cmd) {
         return $cmd.Source
@@ -184,12 +218,14 @@ function Get-ScrcpyExecutable {
 }
 
 function Ensure-PathConfiguredMarker {
-    $folder = $env:SCRCPY_PATH
+    param([string]$Folder)
+
+    $folder = $Folder
     if ([string]::IsNullOrWhiteSpace($folder)) {
         return
     }
 
-    Set-Content -Path $PathConfiguredPath -Value 'configured' -Encoding ASCII
+    Set-Content -Path $PathConfiguredPath -Value $folder -Encoding ASCII
 }
 
 function Test-DevMode {
@@ -232,7 +268,7 @@ function Set-ScrcpyPathFromFolder {
 
     $env:SCRCPY_PATH = $resolvedRoot
     $env:PATH = "$resolvedRoot;$($env:PATH)"
-    Ensure-PathConfiguredMarker
+    Ensure-PathConfiguredMarker -Folder $resolvedRoot
     Write-UiLine "Configured scrcpy PATH from '$resolvedRoot'." -Color Green
     return $resolvedRoot
 }
@@ -1241,7 +1277,12 @@ function Show-Menu {
         Write-Host '  Connect status: Not connected'
     }
     if (-not $Scrcpy) {
-        Write-Host '  ACTION NEEDED: Select 1 to configure scrcpy before pairing or connecting.' -ForegroundColor Yellow
+        if (Test-Path $PathConfiguredPath -PathType Leaf) {
+            Write-Host '  ACTION NEEDED: The saved scrcpy folder was not found. Select 1 to choose its new location.' -ForegroundColor Yellow
+        }
+        else {
+            Write-Host '  ACTION NEEDED: Select 1 to configure scrcpy before pairing or connecting.' -ForegroundColor Yellow
+        }
     }
     Write-Host '===================================================' -ForegroundColor DarkGreen
     Write-Host '  --- Setup / Configuration ---'

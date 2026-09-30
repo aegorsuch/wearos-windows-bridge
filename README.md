@@ -29,7 +29,7 @@ If the helper fails, crashes, or behaves unexpectedly, open a GitHub issue at ht
 3. If the `.bat` file opens as text, right-click it, choose **Open with**, and select **Windows Command Processor**. Also confirm the filename ends in `.bat`, not `.bat.txt`.
 4. In the menu, select **1. Setup scrcpy System Path** before selecting any watch action.
 
-Do not paste the scrcpy download link into the path prompt. Download and extract scrcpy first, then provide the folder that contains both `scrcpy.exe` and `adb.exe`.
+Do not paste the scrcpy download link into the path prompt. Download and extract scrcpy first, then provide the folder that contains both `scrcpy.exe` and `adb.exe`. scrcpy can be stored anywhere; it does not have to be beside the `.bat` and `.ps1` files. The helper remembers the folder you select. If you move or rename it later, select **1. Setup scrcpy System Path** again and choose its new location.
 
 ## Requirements
 
@@ -53,14 +53,14 @@ A `.bat` file is a small script that Windows runs like a program. To use this he
 
 1. Click the [scrcpy releases link](https://github.com/Genymobile/scrcpy/releases), download the latest `scrcpy-win64` zip, and extract it. scrcpy mirrors your watch screen and includes `adb.exe`, which the helper uses to connect to the watch and install APKs.
 2. Run `wearos-windows-bridge.bat` and select **1. Setup scrcpy System Path**.
-3. Drag the extracted folder containing `scrcpy.exe` and `adb.exe` into the window, or enter its path. This configures the current session only; it does not change your permanent Windows PATH.
-4. If that folder is not already on your Windows PATH, repeat setup the next time you launch the bridge.
+3. Drag the extracted folder containing `scrcpy.exe` and `adb.exe` into the window, or enter its path. The helper remembers this folder for future launches but does not change your permanent Windows PATH.
+4. If you move or rename the scrcpy folder later, run setup again and choose its new location.
 
 ## Enable Developer Options and Wireless Debugging
 
 Before pairing, enable the required settings on the watch:
 
-1. Swipe down from the top of the watch screen to open the quick panel.
+1. From the watch face, swipe down from the top edge of the screen to open the quick panel (the panel with quick settings such as battery, Wi-Fi, and Do Not Disturb).
 2. Tap the **Settings** gear icon, then select **About Watch**.
 3. Select **Software**, then tap **Software Version** repeatedly until the watch displays **Developer mode turned on**.
 4. Return to the main Settings screen and open **Developer Options**. It is usually at the bottom of the list or just below **About Watch**.
