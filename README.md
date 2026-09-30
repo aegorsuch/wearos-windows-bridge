@@ -22,6 +22,15 @@ TAK Forge is the canonical repository. GitHub is a secondary repository.
 
 If the helper fails, crashes, or behaves unexpectedly, open a GitHub issue at https://github.com/aegorsuch/wearos-windows-bridge/issues and include the stage of the flow that failed, the exact error text, and the watch model or device state when possible. The tool's menu also includes a bug-report option to open a prefilled issue form.
 
+## Quick Start
+
+1. Download the project files. You need both `wearos-windows-bridge.bat` and `wearos-windows-bridge.ps1` in the same folder.
+2. Double-click `wearos-windows-bridge.bat`. Run the `.bat` file, not the `.ps1` file. The correct result is a black window showing **WEAROS WINDOWS BRIDGE** and a numbered menu.
+3. If the `.bat` file opens as text, right-click it, choose **Open with**, and select **Windows Command Processor**. Also confirm the filename ends in `.bat`, not `.bat.txt`.
+4. In the menu, select **1. Setup scrcpy System Path** before selecting any watch action.
+
+Do not paste the scrcpy download link into the path prompt. Download and extract scrcpy first, then provide the folder that contains both `scrcpy.exe` and `adb.exe`.
+
 ## Requirements
 
 - Windows 10 or later

@@ -1234,6 +1234,9 @@ function Show-Menu {
     else {
         Write-Host '  Connect status: Not connected'
     }
+    if (-not $Scrcpy) {
+        Write-Host '  ACTION NEEDED: Select 1 to configure scrcpy before pairing or connecting.' -ForegroundColor Yellow
+    }
     Write-Host '===================================================' -ForegroundColor DarkGreen
     Write-Host '  --- Setup / Configuration ---'
     Write-Host '  1. Setup scrcpy System Path'
