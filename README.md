@@ -72,6 +72,8 @@ Before pairing, enable the required settings on the watch:
 
 On the watch:
 
+Before pairing, make sure the watch and the Windows PC are connected to the same Wi-Fi network. They must be able to reach each other over that network.
+
 1. Open **Developer Options > Wireless Debugging**.
 2. Select **Pair new device**.
 3. Note the IP address and pairing port shown in the pairing screen.
