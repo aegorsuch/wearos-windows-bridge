@@ -78,8 +78,8 @@ The **IP address** identifies the watch on the network, for example `192.168.1.3
 
 1. Open **Developer Options > Wireless Debugging**.
 2. Select **Pair new device**.
-3. Note the IP address and pairing port shown in the pairing screen.
-4. Note the six-digit number at the top labeled **Wi-Fi pairing code**.
+3. Note the six-digit number at the top labeled **Wi-Fi pairing code**.
+4. Note the IP address and pairing port shown in the pairing screen.
 
 In the helper, select **2. Pair Watch via Wi-Fi** and enter those values when prompted. Pairing saves the watch IP and pairing port for the active profile; it does not mean the watch is currently connected.
 

@@ -1347,9 +1347,9 @@ function Show-Menu {
             Show-Menu
         }
         '2' {
+            $pairCode = Read-Host 'Enter 6-digit Pairing Code (example: 952775)'
             $ip = Read-Host 'Enter Watch IP Address only (example: 192.168.1.33; do not include the port)'
             $pairPort = Read-Host 'Enter Pairing Port only (example: 41131; numbers only)'
-            $pairCode = Read-Host 'Enter 6-digit Pairing Code (example: 952775)'
             $pairInputError = Get-PairInputError -Ip $ip -PairPort $pairPort -PairCode $pairCode
             if ($pairInputError) {
                 Write-UiLine "Pairing input error: $pairInputError" -Color Red
