@@ -152,6 +152,9 @@ function Get-AdbExecutable {
     }
 
     foreach ($segment in ($env:PATH -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($segment)) {
+            continue
+        }
         $candidate = Join-Path $segment 'adb.exe'
         if (Test-Path $candidate) {
             return $candidate
@@ -168,6 +171,9 @@ function Get-ScrcpyExecutable {
     }
 
     foreach ($segment in ($env:PATH -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($segment)) {
+            continue
+        }
         $candidate = Join-Path $segment 'scrcpy.exe'
         if (Test-Path $candidate) {
             return $candidate
