@@ -1,0 +1,49 @@
+name: Publish release
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Package release ZIP
+        id: package
+        shell: pwsh
+        run: |
+          $staging = Join-Path $env:RUNNER_TEMP 'wearos-windows-bridge-release'
+          New-Item -Path $staging -ItemType Directory -Force | Out-Null
+          Copy-Item README.md, wearos-windows-bridge.bat, wearos-windows-bridge.ps1 -Destination $staging
+
+          $archive = Join-Path $env:RUNNER_TEMP 'wearos-windows-bridge.zip'
+          Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $archive -Force
+
+          $shortSha = $env:GITHUB_SHA.Substring(0, 12)
+          "archive=$archive" >> $env:GITHUB_OUTPUT
+          "tag=build-$shortSha" >> $env:GITHUB_OUTPUT
+          "short_sha=$shortSha" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.package.outputs.tag }}
+          name: Wear OS Windows Bridge ${{ steps.package.outputs.short_sha }}
+          body: Automated package from commit ${{ github.sha }}.
+          files: ${{ steps.package.outputs.archive }}
+          make_latest: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
