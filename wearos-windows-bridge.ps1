@@ -1342,7 +1342,7 @@ function Show-Menu {
             Write-UiLine 'Download the latest scrcpy-win64 zip and extract it.' -Color Cyan
             Write-UiLine 'Choose the extracted folder containing both scrcpy.exe and adb.exe.' -Color Cyan
             Write-UiLine 'This only configures the current bridge session; it does not change your permanent Windows PATH.' -Color Cyan
-            $folder = Read-Host 'Enter the extracted scrcpy folder path (press Enter to cancel)'
+            $folder = Read-Host 'Enter or click and drag the extracted scrcpy folder here (press Enter to cancel)'
             if ([string]::IsNullOrWhiteSpace($folder)) {
                 Write-UiLine 'No folder entered; setup canceled. Returning to the menu.' -Color Yellow
                 Show-Menu
@@ -1414,7 +1414,7 @@ function Show-Menu {
             Show-Menu
         }
         '5' {
-            $apk = Read-Host 'Enter APK path'
+            $apk = Read-Host 'Enter APK path or click and drag the APK file here'
             if (-not [string]::IsNullOrWhiteSpace($apk)) {
                 try {
                     Invoke-Sideload -ApkPath $apk.Trim('"')

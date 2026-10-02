@@ -103,7 +103,7 @@ After connecting, select **4. Launch Screen Mirroring**. The helper reconnects t
 
 ## Sideload an APK
 
-After connecting, select **5. Sideload an APK File**, then enter or drag an APK file path into the window and press Enter. The bridge checks the connection, displays install progress, and reports ADB's install result. The APK is installed on the selected watch with replacement and runtime permissions enabled.
+After connecting, select **5. Sideload an APK File**, then enter the APK file path or click and drag the APK file into the window, and press Enter. The bridge checks the connection, displays install progress, and reports ADB's install result. The APK is installed on the selected watch with replacement and runtime permissions enabled.
 
 The install uses the saved direct ADB connection and disables streamed installation for better reliability over wireless debugging. If the watch disconnects during installation, wake it, enable Wireless Debugging, reconnect, and retry if ADB did not report `Success`.
 
