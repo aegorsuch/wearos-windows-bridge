@@ -1653,4 +1653,6 @@ function Main {
     }
 }
 
-Main -ScriptArgs $args
+if ($MyInvocation.InvocationName -ne '.') {
+    Main -ScriptArgs $args
+}
