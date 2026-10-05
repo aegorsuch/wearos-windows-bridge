@@ -3,5 +3,6 @@ path_configured.txt
 active_profile.txt
 watch_profiles.json
 watch_logs/
+diagnostic_bundles/
 _tmp_scrcpy_test/
 testResults.xml

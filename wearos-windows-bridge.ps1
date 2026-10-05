@@ -739,6 +739,205 @@ function Show-DiagnoseInfo {
     }
 }
 
+function Protect-DiagnosticText {
+    param([string]$Text)
+
+    $safeText = $Text -replace '(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?![\w.])', '[REDACTED-IP]'
+    $safeText = $safeText -replace '(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b', '[REDACTED-MAC]'
+    $safeText = $safeText -replace '(?i)\b(serial|device[_ -]?id|android[_ -]?id)\s*[:=]\s*("[^"]*"|[^\s,;]+)', '$1=[REDACTED]'
+    return $safeText
+}
+
+function Get-DiagnosticToolVersion {
+    param(
+        [string]$Executable,
+        [string[]]$Arguments
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Executable)) {
+        return 'Not found'
+    }
+
+    try {
+        return (& $Executable @Arguments 2>&1 | Out-String).Trim()
+    }
+    catch {
+        return "Version query failed: $($_.Exception.Message)"
+    }
+}
+
+function New-DiagnosticBundle {
+    param(
+        [switch]$IncludeLogs,
+        [bool]$RedactIdentifiers = $true,
+        [System.IO.FileInfo[]]$LogFiles = @(),
+        [string]$OutputDirectory = (Join-Path $ScriptDir 'diagnostic_bundles')
+    )
+
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $staging = Join-Path ([System.IO.Path]::GetTempPath()) ("wearos-diagnostics-{0}" -f [guid]::NewGuid().ToString('N'))
+    $archivePath = Join-Path $OutputDirectory "wearos-diagnostics-$stamp.zip"
+    New-Item -Path $staging -ItemType Directory -Force | Out-Null
+
+    try {
+        $adb = Get-AdbExecutable
+        $scrcpy = Get-ScrcpyExecutable
+        $status = try { Get-StatusJson } catch { [pscustomobject]@{ error = $_.Exception.Message } }
+
+        if ($RedactIdentifiers) {
+            if ($status.PSObject.Properties['saved'] -and $status.saved) { $status.saved.ip = '[REDACTED]' }
+            if ($status.PSObject.Properties['activeProfile']) { $status.activeProfile = '[REDACTED]' }
+            if ($status.PSObject.Properties['profiles']) {
+                foreach ($profile in @($status.profiles)) {
+                    if ($profile) {
+                        $profile.name = '[REDACTED]'
+                        $profile.ip = '[REDACTED]'
+                    }
+                }
+            }
+            if ($status.PSObject.Properties['deviceSummary']) {
+                foreach ($device in @($status.deviceSummary)) {
+                    if ($device) { $device.serial = '[REDACTED]' }
+                }
+            }
+        }
+
+        $operatingSystem = try {
+            $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+            [pscustomobject]@{
+                caption = $os.Caption
+                version = $os.Version
+                buildNumber = $os.BuildNumber
+                architecture = $os.OSArchitecture
+            }
+        }
+        catch {
+            [pscustomobject]@{
+                caption = $env:OS
+                version = [Environment]::OSVersion.Version.ToString()
+                buildNumber = ''
+                architecture = if ([Environment]::Is64BitOperatingSystem) { '64-bit' } else { '32-bit' }
+            }
+        }
+
+        $adbPath = if ($RedactIdentifiers -and $adb -and $env:USERPROFILE) { $adb.Replace($env:USERPROFILE, '%USERPROFILE%') } else { $adb }
+        $scrcpyPath = if ($RedactIdentifiers -and $scrcpy -and $env:USERPROFILE) { $scrcpy.Replace($env:USERPROFILE, '%USERPROFILE%') } else { $scrcpy }
+        $diagnostics = [ordered]@{
+            generatedUtc = [DateTime]::UtcNow.ToString('o')
+            operatingSystem = $operatingSystem
+            powershell = [ordered]@{
+                version = $PSVersionTable.PSVersion.ToString()
+                edition = $PSVersionTable.PSEdition
+            }
+            tools = [ordered]@{
+                adbPath = if ($adbPath) { $adbPath } else { 'Not found' }
+                adbVersion = Get-DiagnosticToolVersion -Executable $adb -Arguments @('version')
+                scrcpyPath = if ($scrcpyPath) { $scrcpyPath } else { 'Not found' }
+                scrcpyVersion = Get-DiagnosticToolVersion -Executable $scrcpy -Arguments @('--version')
+            }
+            bridgeStatus = $status
+            identifiersRedacted = $RedactIdentifiers
+            logsIncluded = [bool]$IncludeLogs
+        }
+
+        $diagnosticJson = $diagnostics | ConvertTo-Json -Depth 8
+        if ($RedactIdentifiers) {
+            if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+                $diagnosticJson = [regex]::Replace($diagnosticJson, [regex]::Escape($env:USERPROFILE), '%USERPROFILE%', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            }
+            $diagnosticJson = Protect-DiagnosticText -Text $diagnosticJson
+        }
+        Set-Content -Path (Join-Path $staging 'diagnostics.json') -Value $diagnosticJson -Encoding UTF8
+
+        $includedLogs = @()
+        if ($IncludeLogs) {
+            $logDirectory = Join-Path $staging 'watch_logs'
+            foreach ($log in @($LogFiles | Where-Object { $_ -and $_.Exists -and $_.Length -le 5MB } | Sort-Object LastWriteTime -Descending | Select-Object -First 5)) {
+                if (-not (Test-Path $logDirectory -PathType Container)) {
+                    New-Item -Path $logDirectory -ItemType Directory -Force | Out-Null
+                }
+
+                $contents = Get-Content -Path $log.FullName -Raw -ErrorAction Stop
+                if ($RedactIdentifiers) {
+                    $contents = Protect-DiagnosticText -Text $contents
+                }
+                $safeName = 'watch-log-{0:D2}.txt' -f ($includedLogs.Count + 1)
+                Set-Content -Path (Join-Path $logDirectory $safeName) -Value $contents -Encoding UTF8
+                $includedLogs += $safeName
+            }
+        }
+
+        $manifest = [ordered]@{
+            logsIncluded = $includedLogs
+            identifiersRedacted = $RedactIdentifiers
+            uploadPerformed = $false
+        } | ConvertTo-Json -Depth 4
+        Set-Content -Path (Join-Path $staging 'manifest.json') -Value $manifest -Encoding UTF8
+
+        New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null
+        Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $archivePath -Force
+        return $archivePath
+    }
+    finally {
+        Remove-Item -Path $staging -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Invoke-DiagnosticBundleExport {
+    $includeLogsAnswer = Read-Host 'Include up to five recent watch logs? (y/N)'
+    $includeLogs = $includeLogsAnswer -match '^(?i)y(es)?$'
+    $redactAnswer = Read-Host 'Redact watch IPs and device identifiers? (Y/n)'
+    $redactIdentifiers = $redactAnswer -notmatch '^(?i)n(o)?$'
+
+    $logs = @()
+    $tooLargeLogs = 0
+    if ($includeLogs -and (Test-Path $LogsDir -PathType Container)) {
+        $availableLogs = @(Get-ChildItem -Path $LogsDir -Filter '*_watch_log_*.txt' -File | Where-Object { $_.Name -notlike '*_inprogress.txt' } | Sort-Object LastWriteTime -Descending)
+        $tooLargeLogs = @($availableLogs | Where-Object { $_.Length -gt 5MB }).Count
+        $logs = @($availableLogs | Where-Object { $_.Length -le 5MB } | Select-Object -First 5)
+    }
+
+    Write-UiLine ''
+    Write-UiLine 'Diagnostic bundle preview:' -Color Cyan
+    Write-UiLine '  diagnostics.json: OS, PowerShell, ADB/scrcpy versions and paths, and bridge status'
+    Write-UiLine "  Identifier redaction: $(if ($redactIdentifiers) { 'On' } else { 'Off' })"
+    if ($redactIdentifiers) {
+        Write-UiLine '  Redaction is pattern-based and may miss identifiers in free-text logs.' -Color Yellow
+    }
+    if ($includeLogs) {
+        Write-UiLine '  Watch logs:'
+        if ($logs.Count -eq 0) {
+            Write-UiLine '    None eligible to include'
+        }
+        else {
+            foreach ($log in $logs) {
+                Write-UiLine "    $($log.Name) ($([math]::Round($log.Length / 1KB, 1)) KB)"
+            }
+        }
+        if ($tooLargeLogs -gt 0) {
+            Write-UiLine "  Skipped $tooLargeLogs log(s) larger than 5 MB each."
+        }
+    }
+    else {
+        Write-UiLine '  Watch logs: Not included'
+    }
+
+    $confirmation = Read-Host 'Create this ZIP locally? (y/N)'
+    if ($confirmation -notmatch '^(?i)y(es)?$') {
+        Write-UiLine 'Diagnostic bundle export cancelled.' -Color Yellow
+        return
+    }
+
+    try {
+        $bundlePath = New-DiagnosticBundle -IncludeLogs:$includeLogs -RedactIdentifiers:$redactIdentifiers -LogFiles $logs
+        Write-UiLine "Diagnostic bundle saved to $bundlePath" -Color Green
+        Write-UiLine 'Review the ZIP before sharing it. Nothing was uploaded.' -Color Yellow
+    }
+    catch {
+        Write-UiLine "Diagnostic bundle export failed: $($_.Exception.Message)" -Color Red
+    }
+}
+
 function Connect-Watch {
     param(
         [string]$Ip,
@@ -1237,7 +1436,7 @@ function Show-DevMenu {
             Show-DevMenu
         }
         '4' {
-            Write-UiLine 'Diagnostic bundle export is not yet implemented in the PowerShell core. The existing batch helper logic can be restored later.' -Color Yellow
+            Invoke-DiagnosticBundleExport
             Read-Host 'Press Enter to continue'
             Show-DevMenu
         }

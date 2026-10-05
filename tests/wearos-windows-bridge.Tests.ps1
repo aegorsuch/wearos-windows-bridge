@@ -56,3 +56,52 @@ Describe 'Set-ScrcpyPathFromFolder' {
         { Set-ScrcpyPathFromFolder -Folder $folder } | Should -Throw '*does not contain both scrcpy.exe and adb.exe*'
     }
 }
+
+Describe 'New-DiagnosticBundle' {
+    BeforeEach {
+        $script:LogsDir = Join-Path $TestDrive 'watch_logs'
+        Mock Get-StatusJson {
+            [pscustomobject]@{
+                activeProfile = 'ODIN-WEARTAK'
+                saved = [pscustomobject]@{ ip = '192.168.1.33'; pairPort = '41131'; connPort = '5555' }
+                profiles = @([pscustomobject]@{ name = 'ODIN-WEARTAK'; ip = '192.168.1.33' })
+                deviceSummary = @([pscustomobject]@{ serial = '192.168.1.33:5555'; state = 'device' })
+            }
+        }
+        Mock Get-AdbExecutable { $null }
+        Mock Get-ScrcpyExecutable { $null }
+    }
+
+    It 'redacts identifiers in status and opted-in logs' {
+        New-Item -Path $script:LogsDir -ItemType Directory -Force | Out-Null
+        $logPath = Join-Path $script:LogsDir '192.168.1.33_5555_watch_log_none_20261003-120000_20261003-120100.txt'
+        Set-Content -Path $logPath -Value 'watch 192.168.1.33:5555 serial=DEVICE123' -Encoding UTF8
+        $outputDirectory = Join-Path $TestDrive 'bundles'
+
+        $bundle = New-DiagnosticBundle -IncludeLogs -RedactIdentifiers $true -LogFiles @((Get-Item $logPath)) -OutputDirectory $outputDirectory
+        $extractDirectory = Join-Path $TestDrive 'expanded-redacted'
+        Expand-Archive -Path $bundle -DestinationPath $extractDirectory
+        $diagnostics = Get-Content -Path (Join-Path $extractDirectory 'diagnostics.json') -Raw | ConvertFrom-Json
+        $log = Get-Content -Path (Join-Path $extractDirectory 'watch_logs\watch-log-01.txt') -Raw
+
+        $diagnostics.bridgeStatus.saved.ip | Should -Be '[REDACTED]'
+        $diagnostics.bridgeStatus.profiles[0].name | Should -Be '[REDACTED]'
+        $diagnostics.bridgeStatus.deviceSummary[0].serial | Should -Be '[REDACTED]'
+        $log | Should -Not -Match '192\.168\.1\.33|DEVICE123'
+
+        $manifest = Get-Content -Path (Join-Path $extractDirectory 'manifest.json') -Raw | ConvertFrom-Json
+        $manifest.uploadPerformed | Should -BeFalse
+    }
+
+    It 'omits watch logs unless explicitly requested' {
+        $outputDirectory = Join-Path $TestDrive 'bundles-without-logs'
+
+        $bundle = New-DiagnosticBundle -OutputDirectory $outputDirectory
+        $extractDirectory = Join-Path $TestDrive 'expanded-no-logs'
+        Expand-Archive -Path $bundle -DestinationPath $extractDirectory
+        $manifest = Get-Content -Path (Join-Path $extractDirectory 'manifest.json') -Raw | ConvertFrom-Json
+
+        $manifest.logsIncluded | Should -BeNullOrEmpty
+        Test-Path (Join-Path $extractDirectory 'watch_logs') | Should -BeFalse
+    }
+}

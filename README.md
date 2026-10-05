@@ -133,6 +133,7 @@ The helper creates these local files beside the batch file:
 - `path_configured.txt` - local marker indicating PATH setup was completed; ignored by Git
 - `watch_profiles.json` and `active_profile.txt` - saved watch profiles and the selected profile; ignored by Git
 - `watch_logs/` - captured logs; ignored by Git
+- `diagnostic_bundles/` - locally exported support bundles; ignored by Git
 
 The six-digit pairing code is used only during pairing and is not saved.
 
@@ -161,7 +162,7 @@ Developer Tools is always available as **7. Developer Tools** on the main menu. 
 - **Manage Profiles** - create, switch, and delete saved watch profiles.
 - **Bulk Sideload APK** - install an APK to all currently authorized ADB devices.
 - **Diagnose Environment** - show ADB, scrcpy, profile, and device information.
-- **Export Diagnostic Bundle** - currently a placeholder; bundle export is not implemented yet.
+- **Export Diagnostic Bundle** - create a local ZIP with system/tool versions and paths plus bridge status. Watch logs are excluded by default; users can opt in to up to five recent logs (5 MB each). IPs, MAC addresses, profile names, ADB serials, and user-profile paths are redacted by default. Redaction is pattern-based and may miss identifiers in free-text logs, so review the ZIP before sharing. Nothing is uploaded automatically.
 - **Pair + Connect + Mirror** - run the pairing, connection, and mirroring flow.
 
 Profiles are optional. For more than one watch, create a profile for each device (for example, `ODIN-WEARTAK` and `ODIN-WEARTAK-4`) and switch profiles before pairing or connecting. Each profile stores its own IP and ports. The `default` profile cannot be deleted.
