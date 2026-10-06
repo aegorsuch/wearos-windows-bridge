@@ -1369,6 +1369,7 @@ function Show-Help {
 }
 
 function Show-DevMenu {
+    while ($true) {
     Write-Host ''
     Write-Host '===================================================' -ForegroundColor DarkGreen
     Write-Host '              DEVELOPER MODE' -ForegroundColor Yellow
@@ -1416,7 +1417,6 @@ function Show-DevMenu {
                     Write-UiLine "Switched to profile '$name'." -Color Green
                 }
             }
-            Show-DevMenu
         }
         '2' {
             $apk = Read-Host 'Enter APK path for bulk install'
@@ -1428,17 +1428,14 @@ function Show-DevMenu {
                     Write-UiLine $_.Exception.Message -Color Red
                 }
             }
-            Show-DevMenu
         }
         '3' {
             Show-DiagnoseInfo
             Read-Host 'Press Enter to continue'
-            Show-DevMenu
         }
         '4' {
             Invoke-DiagnosticBundleExport
             Read-Host 'Press Enter to continue'
-            Show-DevMenu
         }
         '5' {
             $ip = Read-Host 'Watch IP'
@@ -1459,22 +1456,21 @@ function Show-DevMenu {
                     Write-UiLine $_.Exception.Message -Color Red
                 }
             }
-            Show-DevMenu
         }
         '6' {
             Open-IssueReporter
-            Show-DevMenu
         }
         '7' {
-            Show-Menu
+            return
         }
         default {
-            Show-DevMenu
         }
+    }
     }
 }
 
 function Show-Menu {
+    while ($true) {
     $profile = Get-CurrentProfile
     $cache = Load-IpCache
     $Adb = Get-AdbExecutable
@@ -1544,8 +1540,7 @@ function Show-Menu {
             $folder = Read-Host 'Enter or click and drag the extracted scrcpy folder here (press Enter to cancel)'
             if ([string]::IsNullOrWhiteSpace($folder)) {
                 Write-UiLine 'No folder entered; setup canceled. Returning to the menu.' -Color Yellow
-                Show-Menu
-                return
+                continue
             }
             try {
                 Set-ScrcpyPathFromFolder -Folder $folder
@@ -1553,7 +1548,6 @@ function Show-Menu {
             catch {
                 Write-UiLine $_.Exception.Message -Color Red
             }
-            Show-Menu
         }
         '2' {
             $pairCode = Read-Host 'Enter 6-digit Pairing Code (example: 952775)'
@@ -1572,7 +1566,6 @@ function Show-Menu {
                     Write-UiLine "Pairing failed: $($_.Exception.Message)" -Color Red
                 }
             }
-            Show-Menu
         }
         '3' {
             $defaultIp = if ($cache.ip -ne 'None' -and -not [string]::IsNullOrWhiteSpace($cache.ip)) { $cache.ip } else { 'saved paired IP' }
@@ -1584,14 +1577,12 @@ function Show-Menu {
 
             if ([string]::IsNullOrWhiteSpace($resolvedIp) -or $resolvedIp -eq 'None') {
                 Write-UiLine 'No paired watch is available yet. Pair a watch first or enter an IP address manually.' -Color Yellow
-                Show-Menu
-                return
+                continue
             }
 
             if ([string]::IsNullOrWhiteSpace($resolvedPort)) {
                 Write-UiLine 'A connection port is required before connecting.' -Color Yellow
-                Show-Menu
-                return
+                continue
             }
 
             try {
@@ -1601,7 +1592,6 @@ function Show-Menu {
             catch {
                 Write-UiLine $_.Exception.Message -Color Red
             }
-            Show-Menu
         }
         '4' {
             try {
@@ -1610,7 +1600,6 @@ function Show-Menu {
             catch {
                 Write-UiLine $_.Exception.Message -Color Red
             }
-            Show-Menu
         }
         '5' {
             $apk = Read-Host 'Enter APK path or click and drag the APK file here'
@@ -1623,7 +1612,6 @@ function Show-Menu {
                     Write-UiLine $_.Exception.Message -Color Red
                 }
             }
-            Show-Menu
         }
         '6' {
             $keyword = Read-Host 'Optional keyword filter (leave blank for all logs)'
@@ -1634,18 +1622,16 @@ function Show-Menu {
             catch {
                 Write-UiLine $_.Exception.Message -Color Red
             }
-            Show-Menu
         }
         '7' {
             Show-DevMenu
         }
         '8' {
             Open-IssueReporter
-            Show-Menu
         }
         default {
-            Show-Menu
         }
+    }
     }
 }
 
