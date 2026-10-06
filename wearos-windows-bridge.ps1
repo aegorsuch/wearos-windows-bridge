@@ -1369,282 +1369,268 @@ function Show-Help {
 }
 
 function Show-DevMenu {
-    Write-Host ''
-    Write-Host '===================================================' -ForegroundColor DarkGreen
-    Write-Host '              DEVELOPER MODE' -ForegroundColor Yellow
-    Write-Host '===================================================' -ForegroundColor DarkGreen
-    Write-Host '  1. Manage Profiles'
-    Write-Host '  2. Bulk Sideload APK'
-    Write-Host '  3. Diagnose Environment'
-    Write-Host '  4. Export Diagnostic Bundle'
-    Write-Host '  5. Pair + Connect + Mirror'
-    Write-Host '  6. Report a Bug'
-    Write-Host '  7. Back to main menu'
-    Write-Host '===================================================' -ForegroundColor DarkGreen
+    while ($true) {
+        Write-Host ''
+        Write-Host '===================================================' -ForegroundColor DarkGreen
+        Write-Host '              DEVELOPER MODE' -ForegroundColor Yellow
+        Write-Host '===================================================' -ForegroundColor DarkGreen
+        Write-Host '  1. Manage Profiles'
+        Write-Host '  2. Bulk Sideload APK'
+        Write-Host '  3. Diagnose Environment'
+        Write-Host '  4. Export Diagnostic Bundle'
+        Write-Host '  5. Pair + Connect + Mirror'
+        Write-Host '  6. Report a Bug'
+        Write-Host '  7. Back to main menu'
+        Write-Host '===================================================' -ForegroundColor DarkGreen
 
-    $choice = Read-Host 'Select an option (1-7)'
-    switch ($choice) {
-        '1' {
-            $profiles = Load-ProfileStore
-            Write-UiLine 'Available profiles:' -Color Cyan
-            foreach ($key in $profiles.profiles.Keys) {
-                $entry = $profiles.profiles[$key]
-                $marker = if ($key -eq $profiles.activeProfile) { ' * active' } else { '' }
-                Write-UiLine "  $key -> $($entry.ip)$marker"
-            }
+        $choice = Read-Host 'Select an option (1-7)'
+        switch ($choice) {
+            '1' {
+                $profiles = Load-ProfileStore
+                Write-UiLine 'Available profiles:' -Color Cyan
+                foreach ($key in $profiles.profiles.Keys) {
+                    $entry = $profiles.profiles[$key]
+                    $marker = if ($key -eq $profiles.activeProfile) { ' * active' } else { '' }
+                    Write-UiLine "  $key -> $($entry.ip)$marker"
+                }
 
-            $name = Read-Host 'Enter a profile name to use, or type DELETE NAME to remove a profile, or leave blank to keep the current one'
-            if (-not [string]::IsNullOrWhiteSpace($name)) {
-                if ($name -match '^(?i)delete\s+(.+)$') {
-                    $target = $matches[1].Trim()
-                    $confirmation = Read-Host "Delete profile '$target'? This cannot be undone. (y/N)"
-                    if ($confirmation -match '^(?i)y(es)?$') {
-                        try {
-                            Remove-Profile -ProfileName $target
-                            Write-UiLine "Deleted profile '$target'." -Color Green
+                $name = Read-Host 'Enter a profile name to use, or type DELETE NAME to remove a profile, or leave blank to keep the current one'
+                if (-not [string]::IsNullOrWhiteSpace($name)) {
+                    if ($name -match '^(?i)delete\s+(.+)$') {
+                        $target = $matches[1].Trim()
+                        $confirmation = Read-Host "Delete profile '$target'? This cannot be undone. (y/N)"
+                        if ($confirmation -match '^(?i)y(es)?$') {
+                            try {
+                                Remove-Profile -ProfileName $target
+                                Write-UiLine "Deleted profile '$target'." -Color Green
+                            }
+                            catch {
+                                Write-UiLine $_.Exception.Message -Color Red
+                            }
                         }
-                        catch {
-                            Write-UiLine $_.Exception.Message -Color Red
+                        else {
+                            Write-UiLine "Profile deletion cancelled for '$target'." -Color Yellow
                         }
                     }
                     else {
-                        Write-UiLine "Profile deletion cancelled for '$target'." -Color Yellow
+                        Set-CurrentProfile -ProfileName $name
+                        Write-UiLine "Switched to profile '$name'." -Color Green
                     }
                 }
-                else {
-                    Set-CurrentProfile -ProfileName $name
-                    Write-UiLine "Switched to profile '$name'." -Color Green
+            }
+            '2' {
+                $apk = Read-Host 'Enter APK path for bulk install'
+                if (-not [string]::IsNullOrWhiteSpace($apk)) {
+                    try {
+                        Invoke-BulkSideload -ApkPath $apk.Trim('"')
+                    }
+                    catch {
+                        Write-UiLine $_.Exception.Message -Color Red
+                    }
                 }
             }
-            Show-DevMenu
-        }
-        '2' {
-            $apk = Read-Host 'Enter APK path for bulk install'
-            if (-not [string]::IsNullOrWhiteSpace($apk)) {
-                try {
-                    Invoke-BulkSideload -ApkPath $apk.Trim('"')
-                }
-                catch {
-                    Write-UiLine $_.Exception.Message -Color Red
-                }
+            '3' {
+                Show-DiagnoseInfo
+                Read-Host 'Press Enter to continue'
             }
-            Show-DevMenu
-        }
-        '3' {
-            Show-DiagnoseInfo
-            Read-Host 'Press Enter to continue'
-            Show-DevMenu
-        }
-        '4' {
-            Invoke-DiagnosticBundleExport
-            Read-Host 'Press Enter to continue'
-            Show-DevMenu
-        }
-        '5' {
-            $ip = Read-Host 'Watch IP'
-            $pairPort = Read-Host 'Pairing port'
-            $pairCode = Read-Host 'Pairing code'
-            if (-not [string]::IsNullOrWhiteSpace($ip) -and -not [string]::IsNullOrWhiteSpace($pairPort) -and -not [string]::IsNullOrWhiteSpace($pairCode)) {
-                try {
-                    $pairOk = Invoke-PairWatch -Ip $ip -PairPort $pairPort -PairCode $pairCode
-                    if ($pairOk) {
-                        $connPort = Read-Host 'Connection port'
-                        if (-not [string]::IsNullOrWhiteSpace($connPort)) {
-                            Connect-Watch -Ip $ip -Port $connPort
-                            Invoke-Mirror
+            '4' {
+                Invoke-DiagnosticBundleExport
+                Read-Host 'Press Enter to continue'
+            }
+            '5' {
+                $ip = Read-Host 'Watch IP'
+                $pairPort = Read-Host 'Pairing port'
+                $pairCode = Read-Host 'Pairing code'
+                if (-not [string]::IsNullOrWhiteSpace($ip) -and -not [string]::IsNullOrWhiteSpace($pairPort) -and -not [string]::IsNullOrWhiteSpace($pairCode)) {
+                    try {
+                        $pairOk = Invoke-PairWatch -Ip $ip -PairPort $pairPort -PairCode $pairCode
+                        if ($pairOk) {
+                            $connPort = Read-Host 'Connection port'
+                            if (-not [string]::IsNullOrWhiteSpace($connPort)) {
+                                Connect-Watch -Ip $ip -Port $connPort
+                                Invoke-Mirror
+                            }
                         }
                     }
-                }
-                catch {
-                    Write-UiLine $_.Exception.Message -Color Red
+                    catch {
+                        Write-UiLine $_.Exception.Message -Color Red
+                    }
                 }
             }
-            Show-DevMenu
-        }
-        '6' {
-            Open-IssueReporter
-            Show-DevMenu
-        }
-        '7' {
-            Show-Menu
-        }
-        default {
-            Show-DevMenu
+            '6' {
+                Open-IssueReporter
+            }
+            '7' {
+                return
+            }
+            default {
+            }
         }
     }
 }
 
 function Show-Menu {
-    $profile = Get-CurrentProfile
-    $cache = Load-IpCache
-    $Adb = Get-AdbExecutable
-    $Scrcpy = Get-ScrcpyExecutable
-    $entries = Get-DeviceEntries
-    # Pairing is saved authorization and does not appear in `adb devices`.
-    $paired = ($cache.ip -ne 'None' -and -not [string]::IsNullOrWhiteSpace($cache.pairPort))
-    $connected = $false
-    if ($cache.ip -ne 'None' -and -not [string]::IsNullOrWhiteSpace($cache.connPort)) {
-        foreach ($entry in $entries) {
-            if ($entry.serial -eq "$($cache.ip):$($cache.connPort)" -or $entry.serial -like "$($cache.ip):*") {
-                $connected = $true
-                break
+    while ($true) {
+        $profile = Get-CurrentProfile
+        $cache = Load-IpCache
+        $Adb = Get-AdbExecutable
+        $Scrcpy = Get-ScrcpyExecutable
+        $entries = Get-DeviceEntries
+        # Pairing is saved authorization and does not appear in `adb devices`.
+        $paired = ($cache.ip -ne 'None' -and -not [string]::IsNullOrWhiteSpace($cache.pairPort))
+        $connected = $false
+        if ($cache.ip -ne 'None' -and -not [string]::IsNullOrWhiteSpace($cache.connPort)) {
+            foreach ($entry in $entries) {
+                if ($entry.serial -eq "$($cache.ip):$($cache.connPort)" -or $entry.serial -like "$($cache.ip):*") {
+                    $connected = $true
+                    break
+                }
             }
         }
-    }
 
-    Write-Host ''
-    Write-Host '===================================================' -ForegroundColor DarkGreen
-    Write-Host '             WEAROS WINDOWS BRIDGE' -ForegroundColor Green
-    Write-Host '===================================================' -ForegroundColor DarkGreen
-    Write-Host "  Scrcpy System Path: $(if ($Scrcpy) { 'Configured' } else { 'Not configured' })"
-    if ($paired) {
-        Write-Host "  Pair status: Paired (saved) to $($cache.ip):$($cache.pairPort)"
-    }
-    else {
-        Write-Host '  Pair status: Not paired'
-    }
-    if ($connected) {
-        Write-Host "  Connect status: Connected to $($cache.ip):$($cache.connPort)"
-    }
-    else {
-        Write-Host '  Connect status: Not connected'
-    }
-    if (-not $Scrcpy) {
-        if (Test-Path $PathConfiguredPath -PathType Leaf) {
-            Write-Host '  ACTION NEEDED: The saved scrcpy folder was not found. Select 1 to choose its new location.' -ForegroundColor Yellow
+        Write-Host ''
+        Write-Host '===================================================' -ForegroundColor DarkGreen
+        Write-Host '             WEAROS WINDOWS BRIDGE' -ForegroundColor Green
+        Write-Host '===================================================' -ForegroundColor DarkGreen
+        Write-Host "  Scrcpy System Path: $(if ($Scrcpy) { 'Configured' } else { 'Not configured' })"
+        if ($paired) {
+            Write-Host "  Pair status: Paired (saved) to $($cache.ip):$($cache.pairPort)"
         }
         else {
-            Write-Host '  ACTION NEEDED: Select 1 to configure scrcpy before pairing or connecting.' -ForegroundColor Yellow
+            Write-Host '  Pair status: Not paired'
         }
-    }
-    Write-Host '===================================================' -ForegroundColor DarkGreen
-    Write-Host '  --- Setup / Configuration ---'
-    Write-Host '  1. Setup scrcpy System Path'
-    Write-Host '  2. Pair Watch via Wi-Fi'
-    Write-Host '  3. Connect to Watch'
-    Write-Host ''
-    Write-Host '  --- Watch Actions ---'
-    Write-Host '  4. Launch Screen Mirroring'
-    Write-Host '  5. Sideload an APK File'
-    Write-Host '  6. Live Watch Logs'
-    Write-Host ''
-    Write-Host '  --- Developer ---'
-    Write-Host '  7. Developer Tools'
-    Write-Host '  8. Report a Bug'
-    Write-Host '===================================================' -ForegroundColor DarkGreen
-    $choice = Read-Host 'Select an option (1-8)'
-
-    switch ($choice) {
-        '1' {
-            Write-UiLine 'scrcpy is the open-source screen-mirroring tool used to display a Wear OS watch on Windows.' -Color Cyan
-            Write-UiLine 'Open this clickable link in your browser (Ctrl+click if required by your terminal): https://github.com/Genymobile/scrcpy/releases' -Color Cyan
-            Write-UiLine 'Download the latest scrcpy-win64 zip and extract it.' -Color Cyan
-            Write-UiLine 'Choose the extracted folder containing both scrcpy.exe and adb.exe.' -Color Cyan
-            Write-UiLine 'This only configures the current bridge session; it does not change your permanent Windows PATH.' -Color Cyan
-            $folder = Read-Host 'Enter or click and drag the extracted scrcpy folder here (press Enter to cancel)'
-            if ([string]::IsNullOrWhiteSpace($folder)) {
-                Write-UiLine 'No folder entered; setup canceled. Returning to the menu.' -Color Yellow
-                Show-Menu
-                return
-            }
-            try {
-                Set-ScrcpyPathFromFolder -Folder $folder
-            }
-            catch {
-                Write-UiLine $_.Exception.Message -Color Red
-            }
-            Show-Menu
+        if ($connected) {
+            Write-Host "  Connect status: Connected to $($cache.ip):$($cache.connPort)"
         }
-        '2' {
-            $pairCode = Read-Host 'Enter 6-digit Pairing Code (example: 952775)'
-            $ip = Read-Host 'Enter Watch IP Address only (example: 192.168.1.33; do not include the port)'
-            $pairPort = Read-Host 'Enter Pairing Port only (example: 41131; numbers only)'
-            $pairInputError = Get-PairInputError -Ip $ip -PairPort $pairPort -PairCode $pairCode
-            if ($pairInputError) {
-                Write-UiLine "Pairing input error: $pairInputError" -Color Red
+        else {
+            Write-Host '  Connect status: Not connected'
+        }
+        if (-not $Scrcpy) {
+            if (Test-Path $PathConfiguredPath -PathType Leaf) {
+                Write-Host '  ACTION NEEDED: The saved scrcpy folder was not found. Select 1 to choose its new location.' -ForegroundColor Yellow
             }
             else {
-                try {
-                    $ok = Invoke-PairWatch -Ip $ip -PairPort $pairPort -PairCode $pairCode
-                    if ($ok) { Write-UiLine 'Pairing succeeded.' -Color Green } else { Write-UiLine 'Pairing failed.' -Color Red }
+                Write-Host '  ACTION NEEDED: Select 1 to configure scrcpy before pairing or connecting.' -ForegroundColor Yellow
+            }
+        }
+        Write-Host '===================================================' -ForegroundColor DarkGreen
+        Write-Host '  --- Setup / Configuration ---'
+        Write-Host '  1. Setup scrcpy System Path'
+        Write-Host '  2. Pair Watch via Wi-Fi'
+        Write-Host '  3. Connect to Watch'
+        Write-Host ''
+        Write-Host '  --- Watch Actions ---'
+        Write-Host '  4. Launch Screen Mirroring'
+        Write-Host '  5. Sideload an APK File'
+        Write-Host '  6. Live Watch Logs'
+        Write-Host ''
+        Write-Host '  --- Developer ---'
+        Write-Host '  7. Developer Tools'
+        Write-Host '  8. Report a Bug'
+        Write-Host '===================================================' -ForegroundColor DarkGreen
+        $choice = Read-Host 'Select an option (1-8)'
+
+        switch ($choice) {
+            '1' {
+                Write-UiLine 'scrcpy is the open-source screen-mirroring tool used to display a Wear OS watch on Windows.' -Color Cyan
+                Write-UiLine 'Open this clickable link in your browser (Ctrl+click if required by your terminal): https://github.com/Genymobile/scrcpy/releases' -Color Cyan
+                Write-UiLine 'Download the latest scrcpy-win64 zip and extract it.' -Color Cyan
+                Write-UiLine 'Choose the extracted folder containing both scrcpy.exe and adb.exe.' -Color Cyan
+                Write-UiLine 'This only configures the current bridge session; it does not change your permanent Windows PATH.' -Color Cyan
+                $folder = Read-Host 'Enter or click and drag the extracted scrcpy folder here (press Enter to cancel)'
+                if ([string]::IsNullOrWhiteSpace($folder)) {
+                    Write-UiLine 'No folder entered; setup canceled. Returning to the menu.' -Color Yellow
+                    continue
                 }
-                catch {
-                    Write-UiLine "Pairing failed: $($_.Exception.Message)" -Color Red
-                }
-            }
-            Show-Menu
-        }
-        '3' {
-            $defaultIp = if ($cache.ip -ne 'None' -and -not [string]::IsNullOrWhiteSpace($cache.ip)) { $cache.ip } else { 'saved paired IP' }
-            $ip = Read-Host "Enter Watch IP Address (leave blank to use $defaultIp)"
-            $port = Read-Host 'Enter Connection Port'
-
-            $resolvedIp = if ([string]::IsNullOrWhiteSpace($ip)) { $cache.ip } else { $ip }
-            $resolvedPort = if ([string]::IsNullOrWhiteSpace($port)) { $cache.connPort } else { $port }
-
-            if ([string]::IsNullOrWhiteSpace($resolvedIp) -or $resolvedIp -eq 'None') {
-                Write-UiLine 'No paired watch is available yet. Pair a watch first or enter an IP address manually.' -Color Yellow
-                Show-Menu
-                return
-            }
-
-            if ([string]::IsNullOrWhiteSpace($resolvedPort)) {
-                Write-UiLine 'A connection port is required before connecting.' -Color Yellow
-                Show-Menu
-                return
-            }
-
-            try {
-                $ok = Connect-Watch -Ip $resolvedIp -Port $resolvedPort
-                if ($ok) { Write-UiLine "Connected to ${resolvedIp}:${resolvedPort}." -Color Green } else { Write-UiLine 'Connection failed.' -Color Red }
-            }
-            catch {
-                Write-UiLine $_.Exception.Message -Color Red
-            }
-            Show-Menu
-        }
-        '4' {
-            try {
-                Invoke-Mirror
-            }
-            catch {
-                Write-UiLine $_.Exception.Message -Color Red
-            }
-            Show-Menu
-        }
-        '5' {
-            $apk = Read-Host 'Enter APK path or click and drag the APK file here'
-            if (-not [string]::IsNullOrWhiteSpace($apk)) {
                 try {
-                    Invoke-Sideload -ApkPath $apk.Trim('"')
-                    Write-UiLine 'Install completed.' -Color Green
+                    Set-ScrcpyPathFromFolder -Folder $folder
                 }
                 catch {
                     Write-UiLine $_.Exception.Message -Color Red
                 }
             }
-            Show-Menu
-        }
-        '6' {
-            $keyword = Read-Host 'Optional keyword filter (leave blank for all logs)'
-            try {
-                $file = Invoke-LogsCapture -Keyword $keyword
-                Write-UiLine "Saved logs to $file" -Color Green
+            '2' {
+                $pairCode = Read-Host 'Enter 6-digit Pairing Code (example: 952775)'
+                $ip = Read-Host 'Enter Watch IP Address only (example: 192.168.1.33; do not include the port)'
+                $pairPort = Read-Host 'Enter Pairing Port only (example: 41131; numbers only)'
+                $pairInputError = Get-PairInputError -Ip $ip -PairPort $pairPort -PairCode $pairCode
+                if ($pairInputError) {
+                    Write-UiLine "Pairing input error: $pairInputError" -Color Red
+                }
+                else {
+                    try {
+                        $ok = Invoke-PairWatch -Ip $ip -PairPort $pairPort -PairCode $pairCode
+                        if ($ok) { Write-UiLine 'Pairing succeeded.' -Color Green } else { Write-UiLine 'Pairing failed.' -Color Red }
+                    }
+                    catch {
+                        Write-UiLine "Pairing failed: $($_.Exception.Message)" -Color Red
+                    }
+                }
             }
-            catch {
-                Write-UiLine $_.Exception.Message -Color Red
+            '3' {
+                $defaultIp = if ($cache.ip -ne 'None' -and -not [string]::IsNullOrWhiteSpace($cache.ip)) { $cache.ip } else { 'saved paired IP' }
+                $ip = Read-Host "Enter Watch IP Address (leave blank to use $defaultIp)"
+                $port = Read-Host 'Enter Connection Port'
+
+                $resolvedIp = if ([string]::IsNullOrWhiteSpace($ip)) { $cache.ip } else { $ip }
+                $resolvedPort = if ([string]::IsNullOrWhiteSpace($port)) { $cache.connPort } else { $port }
+
+                if ([string]::IsNullOrWhiteSpace($resolvedIp) -or $resolvedIp -eq 'None') {
+                    Write-UiLine 'No paired watch is available yet. Pair a watch first or enter an IP address manually.' -Color Yellow
+                    continue
+                }
+
+                if ([string]::IsNullOrWhiteSpace($resolvedPort)) {
+                    Write-UiLine 'A connection port is required before connecting.' -Color Yellow
+                    continue
+                }
+
+                try {
+                    $ok = Connect-Watch -Ip $resolvedIp -Port $resolvedPort
+                    if ($ok) { Write-UiLine "Connected to ${resolvedIp}:${resolvedPort}." -Color Green } else { Write-UiLine 'Connection failed.' -Color Red }
+                }
+                catch {
+                    Write-UiLine $_.Exception.Message -Color Red
+                }
             }
-            Show-Menu
-        }
-        '7' {
-            Show-DevMenu
-        }
-        '8' {
-            Open-IssueReporter
-            Show-Menu
-        }
-        default {
-            Show-Menu
+            '4' {
+                try {
+                    Invoke-Mirror
+                }
+                catch {
+                    Write-UiLine $_.Exception.Message -Color Red
+                }
+            }
+            '5' {
+                $apk = Read-Host 'Enter APK path or click and drag the APK file here'
+                if (-not [string]::IsNullOrWhiteSpace($apk)) {
+                    try {
+                        Invoke-Sideload -ApkPath $apk.Trim('"')
+                        Write-UiLine 'Install completed.' -Color Green
+                    }
+                    catch {
+                        Write-UiLine $_.Exception.Message -Color Red
+                    }
+                }
+            }
+            '6' {
+                $keyword = Read-Host 'Optional keyword filter (leave blank for all logs)'
+                try {
+                    $file = Invoke-LogsCapture -Keyword $keyword
+                    Write-UiLine "Saved logs to $file" -Color Green
+                }
+                catch {
+                    Write-UiLine $_.Exception.Message -Color Red
+                }
+            }
+            '7' {
+                Show-DevMenu
+            }
+            '8' {
+                Open-IssueReporter
+            }
+            default {
+            }
         }
     }
 }
