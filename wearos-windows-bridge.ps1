@@ -6,6 +6,11 @@ $ProfilesPath = Join-Path $ScriptDir 'watch_profiles.json'
 $ActiveProfilePath = Join-Path $ScriptDir 'active_profile.txt'
 $PathConfiguredPath = Join-Path $ScriptDir 'path_configured.txt'
 $LogsDir = Join-Path $ScriptDir 'watch_logs'
+$script:AdbOverride = $null
+$script:TargetOverride = $null
+$script:CommandTimeoutSeconds = 120
+$script:AutomationMode = $false
+$script:JsonMessages = $null
 
 function Write-UiLine {
     param(
@@ -13,7 +18,87 @@ function Write-UiLine {
         [string]$Color = 'Gray'
     )
 
+    if ($null -ne $script:JsonMessages) {
+        $script:JsonMessages.Add($Message)
+        return
+    }
     Write-Host $Message -ForegroundColor $Color
+}
+
+function ConvertTo-NativeArgument {
+    param([AllowEmptyString()][string]$Value)
+
+    # ProcessStartInfo on Windows PowerShell requires Windows command-line quoting.
+    return '"' + ([regex]::Replace([regex]::Replace($Value, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1')) + '"'
+}
+
+function Invoke-NativeTool {
+    param(
+        [string]$Executable,
+        [string[]]$Arguments,
+        [int]$TimeoutSeconds = $script:CommandTimeoutSeconds,
+        [string]$OutputPath
+    )
+
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = $Executable
+    $info.Arguments = (@($Arguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+    $info.UseShellExecute = $false
+    $info.WorkingDirectory = (Get-Location).ProviderPath
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $info
+    $stream = $null
+    $started = $false
+    try {
+        $started = $process.Start()
+        if (-not $started) { throw "Unable to start $Executable." }
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        if ($OutputPath) {
+            $stream = [System.IO.File]::Open($OutputPath, [System.IO.FileMode]::CreateNew)
+            $stdoutTask = $process.StandardOutput.BaseStream.CopyToAsync($stream)
+        }
+        else {
+            $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        }
+        if ($TimeoutSeconds -gt 0) {
+            $finished = $process.WaitForExit($TimeoutSeconds * 1000)
+        }
+        else {
+            $process.WaitForExit()
+            $finished = $true
+        }
+        if (-not $finished) {
+            $process.Kill()
+            $process.WaitForExit()
+            throw "Command timed out after $TimeoutSeconds seconds: $Executable"
+        }
+        $stdoutTask.GetAwaiter().GetResult() | Out-Null
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+        $stdout = if ($OutputPath) { '' } else { $stdoutTask.Result }
+        return [pscustomobject]@{
+            exitCode = $process.ExitCode
+            output = ($stdout.TrimEnd() + "`n" + $stderr).Trim()
+        }
+    }
+    finally {
+        if ($started -and -not $process.HasExited) {
+            $process.Kill()
+            $process.WaitForExit()
+        }
+        if ($stream) { $stream.Dispose() }
+        $process.Dispose()
+    }
+}
+
+function Assert-NativeSuccess {
+    param($Result, [string]$Operation)
+
+    if ($Result.exitCode -ne 0) {
+        throw "$Operation failed (exit code $($Result.exitCode)): $($Result.output)"
+    }
 }
 
 function Get-AdbCommandPaths {
@@ -43,7 +128,7 @@ function Get-AdbHealthWarning {
         $warning.conflictDetected = $true
         $warning.paths = $paths
         $warning.message = "Multiple adb.exe paths were detected on PATH: $($paths -join '; ')"
-        $warning.advice = 'Close other ADB-based tools such as Android Studio, then retry. If needed, remove the extra adb.exe from PATH or launch the bridge from a clean shell.'
+        $warning.advice = "Configure WEAROS_BRIDGE_ADB to use Android Studio's SDK platform-tools\adb.exe so both tools share the same ADB version."
     }
 
     $Adb = Get-AdbExecutable
@@ -69,7 +154,7 @@ function Get-AdbHealthWarning {
     $combined = ($raw -join "`n")
     if ($combined -match 'adb server is out of date|unable to connect to adb|failed to start daemon|internal error') {
         $warning.message = $combined.Trim()
-        $warning.advice = 'ADB is reporting a server conflict or stale daemon. Close other ADB-based tools, then retry pairing or connection.'
+        $warning.advice = "Use Android Studio's SDK ADB via WEAROS_BRIDGE_ADB. Only restart the shared server explicitly with --recover-adb if necessary."
         $warning.conflictDetected = $true
     }
 
@@ -137,7 +222,7 @@ function Get-ConnectionFailureAdvice {
         }
     }
 
-    $message.Add('If you see "adb server is out of date", close other ADB-based tools such as Android Studio, then retry.')
+    $message.Add('If you see "adb server is out of date", configure WEAROS_BRIDGE_ADB to use the same SDK ADB as Android Studio.')
     return ($message -join ' ')
 }
 
@@ -158,12 +243,19 @@ function Invoke-ConnectionRecovery {
         Write-UiLine 'The watch is not reachable over ADB. Confirm the connection port, network, and wake state, then retry.' -Color Yellow
     }
 
-    Recover-Adb -Reason $Reason
-    Start-Sleep -Seconds 1
-    return $true
+    Write-UiLine 'Retrying only this target; the shared ADB server will not be restarted.' -Color Yellow
 }
 
 function Get-AdbExecutable {
+    if ($script:AdbOverride) {
+        return $script:AdbOverride
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:WEAROS_BRIDGE_ADB)) {
+        if (-not (Test-Path -LiteralPath $env:WEAROS_BRIDGE_ADB -PathType Leaf)) {
+            throw "Configured ADB executable not found: $env:WEAROS_BRIDGE_ADB"
+        }
+        return (Get-Item -LiteralPath $env:WEAROS_BRIDGE_ADB).FullName
+    }
     $configuredFolder = Get-ConfiguredScrcpyFolder
     if ($configuredFolder) {
         $configuredAdb = Join-Path $configuredFolder 'adb.exe'
@@ -320,6 +412,7 @@ function Save-IpCache {
 }
 
 function Load-ProfileStore {
+    param([switch]$ReadOnly)
     $defaultProfile = [ordered]@{
         name = 'default'
         ip = 'None'
@@ -364,6 +457,9 @@ function Load-ProfileStore {
             }
         }
         catch {
+            if ($ReadOnly) {
+                throw "Unable to read watch profiles: $($_.Exception.Message)"
+            }
             $store = [ordered]@{
                 activeProfile = 'default'
                 profiles = [ordered]@{
@@ -379,7 +475,9 @@ function Load-ProfileStore {
     }
 
     if (-not (Test-Path $ActiveProfilePath)) {
-        Set-Content -Path $ActiveProfilePath -Value $store.activeProfile -Encoding ASCII
+        if (-not $ReadOnly) {
+            Set-Content -Path $ActiveProfilePath -Value $store.activeProfile -Encoding ASCII
+        }
     }
     else {
         $profileName = (Get-Content -Path $ActiveProfilePath -TotalCount 1 -ErrorAction SilentlyContinue).Trim()
@@ -388,7 +486,9 @@ function Load-ProfileStore {
         }
         else {
             $store.activeProfile = 'default'
-            Set-Content -Path $ActiveProfilePath -Value 'default' -Encoding ASCII
+            if (-not $ReadOnly) {
+                Set-Content -Path $ActiveProfilePath -Value 'default' -Encoding ASCII
+            }
         }
     }
 
@@ -404,7 +504,9 @@ function Save-ProfileStore {
 }
 
 function Get-CurrentProfile {
-    $store = Load-ProfileStore
+    param([switch]$ReadOnly)
+
+    $store = Load-ProfileStore -ReadOnly:$ReadOnly
     $name = $store.activeProfile
     if (-not $store.profiles.Contains($name)) {
         $name = 'default'
@@ -541,33 +643,10 @@ function Recover-Adb {
     }
 
     Write-UiLine "Recovering ADB: $Reason" -Color Yellow
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = 'Continue'
-        & $Adb kill-server *> $null
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-
-    $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'adb.exe' }
-    foreach ($process in $processes) {
-        try {
-            $process | Invoke-CimMethod -MethodName Terminate | Out-Null
-        }
-        catch {
-            # Ignore cleanup failures; the process may have already exited.
-        }
-    }
-
-    Start-Sleep -Seconds 1
-    try {
-        $ErrorActionPreference = 'Continue'
-        & $Adb start-server *> $null
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
+    $result = Invoke-NativeTool -Executable $Adb -Arguments @('kill-server')
+    Assert-NativeSuccess $result 'Stopping the shared ADB server'
+    $result = Invoke-NativeTool -Executable $Adb -Arguments @('start-server')
+    Assert-NativeSuccess $result 'Starting the shared ADB server'
 }
 
 function Get-DeviceEntries {
@@ -576,24 +655,18 @@ function Get-DeviceEntries {
         return @()
     }
 
-    $raw = ''
-    try {
-        $raw = (& $Adb devices 2>&1 | Out-String)
-    }
-    catch {
-        # ADB sometimes emits daemon startup text on stderr during a recover cycle.
-        # Treat that as a benign startup message instead of a terminating script error.
-        $raw = ''
-    }
+    $result = Invoke-NativeTool -Executable $Adb -Arguments @('devices')
+    Assert-NativeSuccess $result 'Listing ADB devices'
+    $raw = $result.output
 
     $entries = @()
 
     foreach ($line in ($raw -split "`r?`n")) {
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        if ($line -match 'List of devices attached|daemon not running|starting now|adb.exe') { continue }
+        if ($line -match 'List of devices attached|^\*|daemon not running|starting now|adb.exe') { continue }
 
         $parts = $line -split '\s+'
-        if ($parts.Count -lt 2) { continue }
+        if ($parts.Count -lt 2 -or $parts[1] -notin @('device', 'offline', 'unauthorized', 'recovery', 'sideload', 'bootloader', 'no')) { continue }
         $serial = $parts[0].Trim()
         $state = $parts[1].Trim()
         $entries += [pscustomobject]@{
@@ -625,9 +698,9 @@ function Get-DeviceStateByTarget {
 function Get-StatusJson {
     $Adb = Get-AdbExecutable
     $Scrcpy = Get-ScrcpyExecutable
-    $profile = Get-CurrentProfile
+    $profile = Get-CurrentProfile -ReadOnly
     $cache = Load-IpCache
-    $store = Load-ProfileStore
+    $store = Load-ProfileStore -ReadOnly
     $summary = Get-DeviceEntries
 
     # Pairing is an authorization saved by ADB; it is not listed by `adb devices`.
@@ -635,7 +708,7 @@ function Get-StatusJson {
     $connected = $false
     if ($cache.ip -ne 'None' -and -not [string]::IsNullOrWhiteSpace($cache.connPort)) {
         foreach ($entry in $summary) {
-            if ($entry.serial -eq "$($cache.ip):$($cache.connPort)" -or $entry.serial -like "$($cache.ip):*") {
+            if ($entry.serial -eq "$($cache.ip):$($cache.connPort)" -and $entry.state -eq 'device') {
                 $connected = $true
                 break
             }
@@ -689,7 +762,7 @@ function Show-Status {
     $connected = $false
     if ($cache.ip -ne 'None' -and -not [string]::IsNullOrWhiteSpace($cache.connPort)) {
         foreach ($entry in $entries) {
-            if ($entry.serial -eq "$($cache.ip):$($cache.connPort)" -or $entry.serial -like "$($cache.ip):*") {
+            if ($entry.serial -eq "$($cache.ip):$($cache.connPort)" -and $entry.state -eq 'device') {
                 $connected = $true
                 break
             }
@@ -942,7 +1015,8 @@ function Connect-Watch {
     param(
         [string]$Ip,
         [string]$Port,
-        [int]$Retries = 3
+        [int]$Retries = 3,
+        [switch]$NoSave
     )
 
     $Adb = Get-AdbExecutable
@@ -954,36 +1028,27 @@ function Connect-Watch {
         throw 'Both IP and port are required.'
     }
 
-    Write-AdbHealthWarning
-
-    try {
-        & $Adb start-server *> $null
+    $target = "${Ip}:$Port"
+    if ((Get-DeviceStateByTarget -Ip $Ip -Port $Port) -eq 'device') {
+        if (-not $NoSave) {
+            Save-IpCache -Ip $Ip -PairPort (Load-IpCache).pairPort -ConnPort $Port
+            Save-CurrentProfileFromState -Ip $Ip -PairPort (Load-IpCache).pairPort -ConnPort $Port
+        }
+        return $true
     }
-    catch {
-        # ADB may write daemon startup text to stderr even when it starts successfully.
-    }
-    Start-Sleep -Seconds 1
+    $result = Invoke-NativeTool -Executable $Adb -Arguments @('start-server')
+    Assert-NativeSuccess $result 'Starting ADB'
 
     for ($attempt = 1; $attempt -le $Retries; $attempt++) {
-        try {
-            & $Adb disconnect "${Ip}:$Port" *> $null 2>&1
-        }
-        catch {
-            # `adb disconnect` can emit benign startup text while its daemon starts.
-        }
-
-        $raw = ''
-        try {
-            $raw = & $Adb connect "${Ip}:$Port" 2>&1 | Out-String
-        }
-        catch {
-            $raw = $_.Exception.Message
-        }
+        $result = Invoke-NativeTool -Executable $Adb -Arguments @('connect', $target)
+        $raw = $result.output
 
         $state = Get-DeviceStateByTarget -Ip $Ip -Port $Port
         if ($state -eq 'device') {
-            Save-IpCache -Ip $Ip -PairPort (Load-IpCache).pairPort -ConnPort $Port
-            Save-CurrentProfileFromState -Ip $Ip -PairPort (Load-IpCache).pairPort -ConnPort $Port
+            if (-not $NoSave) {
+                Save-IpCache -Ip $Ip -PairPort (Load-IpCache).pairPort -ConnPort $Port
+                Save-CurrentProfileFromState -Ip $Ip -PairPort (Load-IpCache).pairPort -ConnPort $Port
+            }
             return $true
         }
 
@@ -1006,7 +1071,7 @@ function Connect-Watch {
         }
 
         if ($raw -match 'adb server is out of date|unable to connect to adb|failed to start daemon|cannot connect') {
-            Write-UiLine 'ADB reported a daemon or server conflict. Recovering the server and retrying the connection.' -Color Yellow
+            Write-UiLine $raw -Color Yellow
             Invoke-ConnectionRecovery -Ip $Ip -Port $Port -Reason 'ADB server conflict during connect'
         }
 
@@ -1020,6 +1085,27 @@ function Connect-Watch {
     return $false
 }
 
+function Get-OperationTarget {
+    if ($script:TargetOverride) { return $script:TargetOverride }
+    $cache = Load-IpCache
+    if ($cache.ip -eq 'None' -or [string]::IsNullOrWhiteSpace($cache.connPort)) {
+        throw 'No saved watch connection is available. Run connect first or specify --serial or --profile.'
+    }
+    return "$($cache.ip):$($cache.connPort)"
+}
+
+function Ensure-OperationTarget {
+    param([string]$Serial)
+
+    if (-not (Get-AdbExecutable)) { throw 'ADB is required but was not found.' }
+    $entry = @(Get-DeviceEntries | Where-Object { $_.serial -eq $Serial -and $_.state -eq 'device' })
+    if ($entry.Count -gt 0) { return }
+    if ($Serial -match '^([^:]+):([0-9]+)$') {
+        if (Connect-Watch -Ip $Matches[1] -Port $Matches[2] -Retries 2 -NoSave) { return }
+    }
+    throw "Device '$Serial' is not authorized and connected. Check the device, Wireless Debugging port, and debugging authorization."
+}
+
 function Invoke-Mirror {
     $Adb = Get-AdbExecutable
     $Scrcpy = Get-ScrcpyExecutable
@@ -1031,18 +1117,19 @@ function Invoke-Mirror {
         throw 'scrcpy.exe is required but was not found on PATH.'
     }
 
-    $cache = Load-IpCache
-    if ($cache.ip -eq 'None' -or [string]::IsNullOrWhiteSpace($cache.connPort)) {
-        throw 'No saved watch connection is available. Run connect first.'
+    $target = Get-OperationTarget
+    Ensure-OperationTarget $target
+    $previousAdb = $env:ADB
+    try {
+        $env:ADB = $Adb
+        $timeout = if ($script:AutomationMode) { $script:CommandTimeoutSeconds } else { 0 }
+        $result = Invoke-NativeTool -Executable $Scrcpy -Arguments @("--serial=$target", '--max-size=360', '--video-bit-rate=1M') -TimeoutSeconds $timeout
+        Assert-NativeSuccess $result 'Screen mirroring'
+        Write-UiLine $result.output
     }
-
-    $connected = Connect-Watch -Ip $cache.ip -Port $cache.connPort -Retries 2
-    if (-not $connected) {
-        $state = Get-DeviceStateByTarget -Ip $cache.ip -Port $cache.connPort
-        throw "Unable to connect to $($cache.ip):$($cache.connPort) before mirroring. $(Get-ConnectionFailureAdvice -Ip $cache.ip -Port $cache.connPort -State $state)"
+    finally {
+        $env:ADB = $previousAdb
     }
-
-    & $Scrcpy --serial="$($cache.ip):$($cache.connPort)" --max-size=360 --video-bit-rate=1M
 }
 
 function Invoke-Sideload {
@@ -1053,48 +1140,24 @@ function Invoke-Sideload {
         throw 'ADB is required but was not found.'
     }
 
-    $cache = Load-IpCache
-    if ($cache.ip -eq 'None' -or [string]::IsNullOrWhiteSpace($cache.connPort)) {
-        throw 'No saved watch connection is available. Run connect first.'
-    }
-
-    if (-not (Test-Path $ApkPath -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $ApkPath -PathType Leaf)) {
         throw "APK not found: $ApkPath"
     }
 
-    Write-UiLine "Checking connection to $($cache.ip):$($cache.connPort)..." -Color Yellow
-    $connected = Connect-Watch -Ip $cache.ip -Port $cache.connPort -Retries 2
-    if (-not $connected) {
-        $state = Get-DeviceStateByTarget -Ip $cache.ip -Port $cache.connPort
-        throw "Unable to connect to $($cache.ip):$($cache.connPort) before installing. $(Get-ConnectionFailureAdvice -Ip $cache.ip -Port $cache.connPort -State $state)"
-    }
+    $target = Get-OperationTarget
+    Ensure-OperationTarget $target
+    Install-ApkToTarget -ApkPath $ApkPath -Serial $target
+}
 
-    Write-UiLine "Installing $(Split-Path -Leaf $ApkPath) to $($cache.ip):$($cache.connPort)..." -Color Yellow
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = 'SilentlyContinue'
-        $installOutput = & $Adb -s "$($cache.ip):$($cache.connPort)" install -r -g --no-streaming "$ApkPath" 2>&1 | Out-String
-        $installExitCode = $LASTEXITCODE
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
+function Install-ApkToTarget {
+    param([string]$ApkPath, [string]$Serial)
 
-    Write-UiLine $installOutput
-    if ($installOutput -match '(?m)^Success\s*$') {
-        if ($installExitCode -ne 0) {
-            Write-UiLine 'APK installed, but the watch disconnected immediately afterward.' -Color Yellow
-        }
-        return
-    }
-
-    if ($installExitCode -ne 0) {
-        $deviceState = Get-DeviceStateByTarget -Ip $cache.ip -Port $cache.connPort
-        if ($deviceState -eq 'offline' -or $deviceState -eq 'not-found') {
-            throw 'The watch disconnected during installation. Keep the watch awake with Wireless Debugging enabled, reconnect it, then retry the APK install.'
-        }
-
-        throw "APK installation failed (ADB exit code $installExitCode)."
+    Write-UiLine "Installing $(Split-Path -Leaf $ApkPath) to ${Serial}..." -Color Yellow
+    $result = Invoke-NativeTool -Executable (Get-AdbExecutable) -Arguments @('-s', $Serial, 'install', '-r', '-g', '--no-streaming', (Get-Item -LiteralPath $ApkPath).FullName)
+    Write-UiLine $result.output
+    Assert-NativeSuccess $result 'APK installation'
+    if ($result.output -notmatch '(?m)^Success\s*$') {
+        throw "ADB did not confirm APK installation: $($result.output)"
     }
 }
 
@@ -1105,6 +1168,7 @@ function Invoke-BulkSideload {
     if (-not $Adb) {
         throw 'ADB is required but was not found.'
     }
+    if (-not (Test-Path -LiteralPath $ApkPath -PathType Leaf)) { throw "APK not found: $ApkPath" }
 
     $authorized = @()
     foreach ($device in Get-DeviceEntries) {
@@ -1117,16 +1181,17 @@ function Invoke-BulkSideload {
         throw 'No authorized devices were found.'
     }
 
+    $failures = @()
     foreach ($serial in $authorized) {
-        Write-UiLine "Installing to $serial..." -Color Green
-        & $Adb -s $serial install -r -g --no-streaming "$ApkPath"
-        if ($LASTEXITCODE -ne 0) {
-            Write-UiLine "Install failed for $serial" -Color Red
+        try {
+            Install-ApkToTarget -ApkPath $ApkPath -Serial $serial
         }
-        else {
-            Write-UiLine "Install succeeded for $serial" -Color Green
+        catch {
+            $failures += "${serial}: $($_.Exception.Message)"
+            Write-UiLine $failures[-1] -Color Red
         }
     }
+    if ($failures.Count -gt 0) { throw "Bulk install failed on $($failures.Count) device(s): $($failures -join '; ')" }
 }
 
 function Invoke-LogsCapture {
@@ -1189,28 +1254,16 @@ function Invoke-PairWatch {
         throw 'ADB is required but was not found.'
     }
 
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = 'Continue'
-        & $Adb start-server *> $null
-        $startExitCode = $LASTEXITCODE
-        if ($startExitCode -eq 0) {
-            $raw = & $Adb pair "${Ip}:$PairPort" $PairCode 2>&1 | Out-String
-            $pairExitCode = $LASTEXITCODE
-        }
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-
-    if ($startExitCode -ne 0) {
-        Write-UiLine 'ADB server failed to start. Close other ADB-based tools and try again.' -Color Red
+    $startResult = Invoke-NativeTool -Executable $Adb -Arguments @('start-server')
+    if ($startResult.exitCode -ne 0) {
+        Write-UiLine "ADB server failed to start: $($startResult.output)" -Color Red
         return $false
     }
 
-    if ($pairExitCode -ne 0) {
-        Write-UiLine $raw -Color Red
-        Recover-Adb -Reason 'pairing failed'
+    $pairResult = Invoke-NativeTool -Executable $Adb -Arguments @('pair', "${Ip}:$PairPort", $PairCode)
+    if ($pairResult.exitCode -ne 0) {
+        Write-UiLine $pairResult.output -Color Red
+        Write-UiLine 'The shared ADB server was left running. Verify the pairing code and port, then retry.' -Color Yellow
         return $false
     }
 
@@ -1366,6 +1419,254 @@ function Show-Help {
     Write-UiLine '--profile-delete NAME    Delete a saved watch profile'
     Write-UiLine '--pair-connect-mirror    Pair a watch, connect, and mirror if possible'
     Write-UiLine '--help                  Show this help screen'
+    Write-UiLine '--automation-help       Show noninteractive commands and modifiers'
+    Write-UiLine 'Automation uses the same install/mirror functions as the menu; see --automation-help.'
+}
+
+function Show-AutomationHelp {
+    Write-UiLine 'Android Studio / automation CLI'
+    Write-UiLine 'Commands:'
+    Write-UiLine '  --install APK | --bulk-install APK | --mirror | --connect IP PORT'
+    Write-UiLine '  --status-json | --screenshot OUTPUT.png'
+    Write-UiLine '  --tap X Y | --swipe X1 Y1 X2 Y2 [DURATION_MS] | --key KEYCODE'
+    Write-UiLine '  --launch PACKAGE/ACTIVITY | --force-stop PACKAGE'
+    Write-UiLine '  --recover-adb (explicitly restarts the shared server; interrupts Studio)'
+    Write-UiLine 'Modifiers (after the command; order-independent):'
+    Write-UiLine '  --serial SERIAL or --profile NAME: target this call without changing saved settings'
+    Write-UiLine '  --adb PATH: select SDK adb.exe; alternatively set WEAROS_BRIDGE_ADB'
+    Write-UiLine '  --non-interactive: never prompt; reject unsupported interactive commands'
+    Write-UiLine '  --json: one JSON result on stdout, including errors; implies noninteractive'
+    Write-UiLine '  --timeout SECONDS: native-command timeout, 1-3600 (default 120)'
+    Write-UiLine 'Exit codes: 0 = success; 1 = failed operation or invalid arguments.'
+    Write-UiLine 'Mirror runs in the foreground; automation timeout closes it. Normal --mirror has no timeout.'
+    Write-UiLine 'Target modifiers apply only to device operations/status, not bulk install or server recovery.'
+    Write-UiLine 'Connect takes IP/PORT and saves them unless --non-interactive or --json is used.'
+}
+
+function Invoke-DeviceControl {
+    param([string]$Command, [string[]]$Values, [string]$Serial)
+
+    $arguments = switch ($Command) {
+        '--tap' { @('shell', 'input', 'tap') + $Values }
+        '--swipe' { @('shell', 'input', 'swipe') + $Values }
+        '--key' { @('shell', 'input', 'keyevent') + $Values }
+        '--launch' { @('shell', 'am', 'start', '-W', '-n') + $Values }
+        '--force-stop' { @('shell', 'am', 'force-stop') + $Values }
+    }
+    Ensure-OperationTarget $Serial
+    $result = Invoke-NativeTool -Executable (Get-AdbExecutable) -Arguments (@('-s', $Serial) + $arguments)
+    Assert-NativeSuccess $result 'Device control'
+    if ($Command -eq '--launch' -and $result.output -match '(?im)^\s*(Error:|Error type|Exception|Status:\s*(?!\s*ok\b))') {
+        throw "App launch failed: $($result.output)"
+    }
+    Write-UiLine $result.output
+    return [pscustomobject]@{ output = $result.output }
+}
+
+function Save-WatchScreenshot {
+    param([string]$OutputPath, [string]$Serial)
+
+    $destination = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
+    $directory = Split-Path -Parent $destination
+    if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+        throw "Screenshot directory not found: $directory"
+    }
+    if (Test-Path -LiteralPath $destination -PathType Container) {
+        throw "Screenshot path is a directory: $destination"
+    }
+    $temporary = Join-Path $directory ([System.IO.Path]::GetRandomFileName())
+    try {
+        Ensure-OperationTarget $Serial
+        $result = Invoke-NativeTool -Executable (Get-AdbExecutable) -Arguments @('-s', $Serial, 'exec-out', 'screencap', '-p') -OutputPath $temporary
+        Assert-NativeSuccess $result 'Screenshot capture'
+        if ($result.output) { Write-UiLine $result.output }
+        $stream = [System.IO.File]::OpenRead($temporary)
+        try {
+            $header = New-Object byte[] 8
+            $read = $stream.Read($header, 0, 8)
+            if ($read -ne 8 -or [BitConverter]::ToString($header) -ne '89-50-4E-47-0D-0A-1A-0A') {
+                throw 'ADB did not return a PNG screenshot.'
+            }
+        }
+        finally { $stream.Dispose() }
+        Move-Item -LiteralPath $temporary -Destination $destination -Force
+        return [pscustomobject]@{ path = $destination }
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary }
+    }
+}
+
+function Read-AutomationArguments {
+    param([string[]]$ScriptArgs)
+
+    if ($ScriptArgs.Count -eq 0 -or -not $ScriptArgs[0].StartsWith('--')) {
+        throw 'Specify a command first. See --automation-help.'
+    }
+    $options = [ordered]@{
+        command = $ScriptArgs[0].ToLowerInvariant()
+        values = @()
+        serial = $null
+        profile = $null
+        adb = $null
+        timeout = 120
+        nonInteractive = $false
+        json = $false
+    }
+    $seen = @{}
+    for ($i = 1; $i -lt $ScriptArgs.Count; $i++) {
+        $argument = $ScriptArgs[$i]
+        if (-not $argument.StartsWith('--')) {
+            $options.values += $argument
+            continue
+        }
+        $name = $argument.ToLowerInvariant()
+        if ($seen.ContainsKey($name)) { throw "Duplicate option: $argument" }
+        $seen[$name] = $true
+        if ($name -in @('--json', '--non-interactive')) {
+            if ($name -eq '--json') { $options.json = $true }
+            $options.nonInteractive = $true
+            continue
+        }
+        if ($name -notin @('--serial', '--profile', '--adb', '--timeout')) {
+            throw "Unknown automation option: $argument"
+        }
+        $i++
+        if ($i -ge $ScriptArgs.Count -or [string]::IsNullOrWhiteSpace($ScriptArgs[$i]) -or $ScriptArgs[$i].StartsWith('--')) {
+            throw "A value is required for $argument."
+        }
+        $value = $ScriptArgs[$i]
+        if ($name -eq '--timeout') {
+            $seconds = 0
+            if (-not [int]::TryParse($value, [ref]$seconds) -or $seconds -lt 1 -or $seconds -gt 3600) {
+                throw '--timeout must be an integer between 1 and 3600 seconds.'
+            }
+            $options.timeout = $seconds
+        }
+        else { $options[$name.Substring(2)] = $value }
+    }
+    if ($options.serial -and $options.profile) { throw 'Use either --serial or --profile, not both.' }
+    $counts = @{
+        '--install' = @(1); '--bulk-install' = @(1); '--mirror' = @(0)
+        '--connect' = @(2); '--status-json' = @(0); '--screenshot' = @(1)
+        '--tap' = @(2); '--swipe' = @(4, 5); '--key' = @(1)
+        '--launch' = @(1); '--force-stop' = @(1); '--recover-adb' = @(0)
+    }
+    if (-not $counts.ContainsKey($options.command)) {
+        throw "Command '$($options.command)' does not support automation modifiers. See --automation-help."
+    }
+    if ($options.values.Count -notin $counts[$options.command]) {
+        throw "Incorrect number of arguments for $($options.command). See --automation-help."
+    }
+    if (($options.serial -or $options.profile) -and $options.command -in @('--connect', '--bulk-install', '--recover-adb')) {
+        throw "$($options.command) does not accept --serial or --profile."
+    }
+    if ($options.serial -and $options.serial -match '[\s\x00-\x1f]') { throw 'Invalid device serial.' }
+    if ($options.command -in @('--tap', '--swipe')) {
+        foreach ($value in $options.values) {
+            $number = 0
+            if ($value -notmatch '^[0-9]+$' -or -not [int]::TryParse($value, [ref]$number)) {
+                throw 'Coordinates and swipe duration must be nonnegative integers.'
+            }
+        }
+    }
+    if ($options.command -eq '--key' -and $options.values[0] -notmatch '^(?:[0-9]{1,4}|KEYCODE_[A-Z0-9_]+)$') {
+        throw 'Use a numeric keycode or a KEYCODE_NAME such as KEYCODE_HOME.'
+    }
+    if ($options.command -eq '--launch' -and $options.values[0] -notmatch '^[A-Za-z][A-Za-z0-9_.]*/[A-Za-z_.][A-Za-z0-9_.$]*$') {
+        throw 'Use an explicit PACKAGE/ACTIVITY component for --launch.'
+    }
+    if ($options.command -eq '--force-stop' -and $options.values[0] -notmatch '^[A-Za-z][A-Za-z0-9_.]*$') {
+        throw 'Invalid app package name.'
+    }
+    if ($options.command -eq '--connect') {
+        $address = $null
+        $port = 0
+        if (-not [System.Net.IPAddress]::TryParse($options.values[0], [ref]$address) -or $address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) {
+            throw '--connect requires an IPv4 address without a port.'
+        }
+        if (-not [int]::TryParse($options.values[1], [ref]$port) -or $port -lt 1 -or $port -gt 65535) {
+            throw 'Connection port must be between 1 and 65535.'
+        }
+    }
+    return [pscustomobject]$options
+}
+
+function Invoke-AutomationCommand {
+    param([string[]]$ScriptArgs)
+
+    $previousAdb = $script:AdbOverride
+    $previousTarget = $script:TargetOverride
+    $previousTimeout = $script:CommandTimeoutSeconds
+    $previousMode = $script:AutomationMode
+    $previousMessages = $script:JsonMessages
+    $json = $ScriptArgs -contains '--json'
+    $result = [ordered]@{ schemaVersion = 1; command = $ScriptArgs[0]; success = $false; serial = $null; data = $null; messages = @(); error = $null }
+    $exitCode = 0
+    try {
+        if ($json) { $script:JsonMessages = [System.Collections.Generic.List[string]]::new() }
+        $options = Read-AutomationArguments $ScriptArgs
+        $script:AutomationMode = $true
+        $script:CommandTimeoutSeconds = $options.timeout
+        if ($options.adb) {
+            if (-not (Test-Path -LiteralPath $options.adb -PathType Leaf)) { throw "ADB executable not found: $($options.adb)" }
+            $script:AdbOverride = (Get-Item -LiteralPath $options.adb).FullName
+        }
+        if ($options.profile) {
+            $store = Load-ProfileStore -ReadOnly
+            if (-not $store.profiles.Contains($options.profile)) { throw "Profile '$($options.profile)' was not found." }
+            $profile = $store.profiles[$options.profile]
+            if ($profile.ip -eq 'None' -or [string]::IsNullOrWhiteSpace($profile.connPort)) { throw "Profile '$($options.profile)' has no saved connection." }
+            $script:TargetOverride = "$($profile.ip):$($profile.connPort)"
+        }
+        elseif ($options.serial) { $script:TargetOverride = $options.serial }
+        if ($options.command -notin @('--bulk-install', '--recover-adb', '--connect', '--status-json')) {
+            $result.serial = Get-OperationTarget
+        }
+        $values = $options.values
+        switch ($options.command) {
+            '--connect' {
+                $result.serial = "$($values[0]):$($values[1])"
+                if (-not (Connect-Watch -Ip $values[0] -Port $values[1] -NoSave:$options.nonInteractive)) { throw 'Connection failed.' }
+            }
+            '--install' { Invoke-Sideload $values[0] }
+            '--bulk-install' { Invoke-BulkSideload $values[0] }
+            '--mirror' { Invoke-Mirror }
+            '--status-json' {
+                $result.data = Get-StatusJson
+                if ($script:TargetOverride) {
+                    $result.serial = $script:TargetOverride
+                    $result.data['selectedSerial'] = $script:TargetOverride
+                    $result.data['selectedConnected'] = @($result.data.deviceSummary | Where-Object { $_.serial -eq $script:TargetOverride -and $_.state -eq 'device' }).Count -gt 0
+                }
+            }
+            '--screenshot' { $result.data = Save-WatchScreenshot -OutputPath $values[0] -Serial $result.serial }
+            '--recover-adb' { Recover-Adb -Reason 'explicit CLI request' }
+            default { $result.data = Invoke-DeviceControl -Command $options.command -Values $values -Serial $result.serial }
+        }
+        $result.success = $true
+    }
+    catch {
+        $exitCode = 1
+        $result.error = $_.Exception.Message
+        if (-not $json) { Write-UiLine $result.error -Color Red }
+    }
+    finally {
+        if ($json) { $result.messages = @($script:JsonMessages.ToArray()) }
+        $script:AdbOverride = $previousAdb
+        $script:TargetOverride = $previousTarget
+        $script:CommandTimeoutSeconds = $previousTimeout
+        $script:AutomationMode = $previousMode
+        $script:JsonMessages = $previousMessages
+    }
+    if ($json) { $result | ConvertTo-Json -Depth 8 }
+    elseif ($result.success) {
+        if ($result.command -eq '--status-json') { $result.data | ConvertTo-Json -Depth 6 }
+        elseif ($result.data -and $result.data.path) { Write-UiLine "Saved screenshot to $($result.data.path)" -Color Green }
+        else { Write-UiLine 'Operation completed.' -Color Green }
+    }
+    $global:LASTEXITCODE = $exitCode
+    return
 }
 
 function Show-DevMenu {
@@ -1481,7 +1782,7 @@ function Show-Menu {
         $connected = $false
         if ($cache.ip -ne 'None' -and -not [string]::IsNullOrWhiteSpace($cache.connPort)) {
             foreach ($entry in $entries) {
-                if ($entry.serial -eq "$($cache.ip):$($cache.connPort)" -or $entry.serial -like "$($cache.ip):*") {
+                if ($entry.serial -eq "$($cache.ip):$($cache.connPort)" -and $entry.state -eq 'device') {
                     $connected = $true
                     break
                 }
@@ -1641,6 +1942,17 @@ function Main {
     try {
         if ($ScriptArgs.Count -eq 0) {
             Show-Menu
+            return
+        }
+        if ($ScriptArgs[0] -eq '--automation-help' -and $ScriptArgs.Count -eq 1) {
+            Show-AutomationHelp
+            return
+        }
+        $automationCommands = @('--screenshot', '--tap', '--swipe', '--key', '--launch', '--force-stop', '--recover-adb')
+        $automationModifiers = @('--serial', '--profile', '--adb', '--non-interactive', '--json', '--timeout')
+        if ($ScriptArgs[0] -in $automationCommands -or @($ScriptArgs | Where-Object { $_ -in $automationModifiers }).Count -gt 0) {
+            Invoke-AutomationCommand $ScriptArgs
+            if ($global:LASTEXITCODE -ne 0) { exit 1 }
             return
         }
 
@@ -1830,9 +2142,11 @@ function Main {
     catch {
         Write-UiLine "The bridge hit an unexpected error: $($_.Exception.Message)" -Color Red
         Write-UiLine 'You can open a prefilled bug report to help us fix it.' -Color Yellow
-        $reportChoice = Read-Host 'Open GitHub issue now? (Y/N)'
-        if ($reportChoice -match '^(?i)y(es)?$') {
-            Open-IssueReporter -DefaultStep 'crash' -ErrorText $_.Exception.Message
+        if ($ScriptArgs.Count -eq 0) {
+            $reportChoice = Read-Host 'Open GitHub issue now? (Y/N)'
+            if ($reportChoice -match '^(?i)y(es)?$') {
+                Open-IssueReporter -DefaultStep 'crash' -ErrorText $_.Exception.Message
+            }
         }
         exit 1
     }

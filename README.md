@@ -95,11 +95,11 @@ Pairing and connection use different ports. The pairing port is shown after sele
 
 The helper saves the IP address and ports in `ip_cache.txt` and in the active profile. These are local settings and are ignored by Git.
 
-The bridge starts the ADB server before attempting pairing or connection and retries unsuccessful connections. The menu reports pairing from saved settings and connection from the live ADB device list, so a saved pairing can remain even when the watch is offline.
+The bridge reuses an already authorized connection, starts ADB when connecting if needed, and retries unsuccessful connections without restarting the shared server. The menu reports pairing from saved settings and connection from the live ADB device list, so a saved pairing can remain even when the watch is offline. A connected watch must be in the authorized `device` state at the exact saved endpoint.
 
 ## Screen Mirroring
 
-After connecting, select **4. Launch Screen Mirroring**. The helper reconnects to the saved `IP:connection-port` and passes that endpoint to scrcpy.
+After connecting, select **4. Launch Screen Mirroring**. The helper reuses the saved `IP:connection-port` if it is already connected, otherwise attempts to connect, and passes that endpoint to scrcpy. scrcpy uses the same ADB executable as the bridge.
 
 ## Sideload an APK
 
@@ -139,7 +139,7 @@ The six-digit pairing code is used only during pairing and is not saved.
 
 ## PowerShell core, profiles, and automation
 
-The helper now ships with a PowerShell-based core and a small batch launcher for compatibility. This gives the project more robust ADB recovery, structured status output, and profile support for multiple watches.
+The helper now ships with a PowerShell-based core and a small batch launcher for compatibility. This gives the project target-specific connection retries, structured status output, and profile support for multiple watches.
 
 ### Multi-watch profiles
 
@@ -173,13 +173,112 @@ The bulk sideload action targets every ADB device currently in the authorized `d
 
 The PowerShell script exposes `--status-json` for scripts or automation. It returns installation/configuration flags, saved pairing and connection state, the active profile, profile settings, and the current ADB device summary as JSON.
 
-### Self-healing ADB recovery
+### Shared ADB and connection retries
 
-The PowerShell core starts the local ADB server before wireless connection attempts and retries failed connections. Pairing failures also trigger ADB recovery. The connection port shown in Wireless Debugging can change, so update it when reconnecting if needed.
+Menu and CLI operations reuse healthy connections. Failed connection or pairing attempts do not kill the shared ADB server or other ADB processes, so Android Studio's debugger and Logcat can remain attached. The connection port shown in Wireless Debugging can change, so update it when reconnecting if needed. `--recover-adb` is an explicit, opt-in server restart; it interrupts all ADB clients and should not be part of routine automation.
 
 ### One-click pair + connect + mirror
 
 Use **7. Developer Tools > 5. Pair + Connect + Mirror** for the guided flow, or run `wearos-windows-bridge.bat --pair-connect-mirror` for the command-line flow. The command prompts for any values not supplied as arguments.
+
+## Android Studio / Automation
+
+Use the normal menu for manual setup, pairing, and troubleshooting. Scripts and agents should invoke direct commands, not navigate a special menu. Both interfaces use the same installation, connection, and mirroring functions.
+
+Run `wearos-windows-bridge.bat --automation-help` to discover the automation interface. These examples assume the launcher is on PATH; otherwise use its full quoted path.
+
+```text
+wearos-windows-bridge.bat --install "C:\project\app\build\outputs\apk\debug\app-debug.apk" --profile DEV --non-interactive --json
+wearos-windows-bridge.bat --status-json --serial 192.168.1.33:5555 --json
+wearos-windows-bridge.bat --screenshot "C:\project\watch.png" --profile DEV --json
+wearos-windows-bridge.bat --tap 180 180 --profile DEV --json
+wearos-windows-bridge.bat --swipe 180 280 180 80 300 --profile DEV --json
+wearos-windows-bridge.bat --key KEYCODE_HOME --profile DEV --json
+wearos-windows-bridge.bat --launch com.example.watch/.MainActivity --profile DEV --json
+wearos-windows-bridge.bat --force-stop com.example.watch --profile DEV --json
+```
+
+### Commands and modifiers
+
+| Command | Arguments | Behavior |
+|---|---|---|
+| `--install` | APK path | Replace the app and grant runtime permissions; never automatically uninstall or erase app data |
+| `--bulk-install` | APK path | Install to every authorized device; fail overall if any installation fails |
+| `--connect` | IPv4 address and port | Connect directly; `--non-interactive` or `--json` prevents saving/changing profile settings |
+| `--mirror` | None | Open scrcpy for the selected device; run until the window closes or the automation timeout expires |
+| `--status-json` | None | Read status without connecting to a target |
+| `--screenshot` | Output PNG path | Capture binary PNG data; replace the output only after successful capture and PNG signature validation |
+| `--tap` | X Y | Tap nonnegative screen coordinates |
+| `--swipe` | X1 Y1 X2 Y2 and optional duration in ms | Swipe using nonnegative integers; omit duration to use Android's default |
+| `--key` | Numeric keycode or `KEYCODE_NAME` | Send an Android key event |
+| `--launch` | `PACKAGE/ACTIVITY` | Start an explicit activity and wait for the launch result |
+| `--force-stop` | Package name | Force-stop an app |
+| `--recover-adb` | None | Explicitly restart the shared ADB server; interrupts Studio and other ADB clients |
+
+Place modifiers after the command, in any order:
+
+- `--serial SERIAL`: target an exact ADB serial, including USB devices, emulators, or wireless `IP:port` endpoints.
+- `--profile NAME`: target an existing profile's saved endpoint **for this invocation only**. It does not switch the active profile or update saved ports. Create/configure the profile using the menu first.
+- `--adb PATH`: use an explicit ADB executable, preferably Android Studio's SDK `platform-tools\adb.exe`.
+- `--non-interactive`: never prompt; invalid/missing arguments fail immediately. Only the commands in the table support automation modifiers. Interactive pairing, live logging, and profile management remain separate commands.
+- `--json`: implies noninteractive mode and emits exactly one JSON result on stdout, including on failure.
+- `--timeout SECONDS`: timeout for **each native command**, from 1 to 3600 seconds; defaults to 120. Connection retries can involve multiple native commands, so this is not an overall workflow deadline. A timed-out operation fails; an install might still have completed on the device, so inspect its state before retrying.
+
+Use either `--serial` or `--profile`, not both. Without either, device operations use the saved active endpoint. Neither targeting option applies to `--connect`, `--bulk-install`, or `--recover-adb`. Bulk installation deliberately affects all authorized devices.
+
+Relative input/output paths are resolved from the caller's working directory. Configuration and logs still live beside the bridge script. Screenshot directories must already exist. The bridge does not build APKs: run your Gradle build before invoking installation.
+
+`--mirror` without automation modifiers retains its unlimited interactive lifetime. With automation modifiers it runs in the foreground with the native-command timeout; set `--timeout 3600` for a longer viewing session. It does not return a background PID.
+
+### Share Android Studio's ADB
+
+Select the same SDK ADB used by Studio to avoid competing bundled ADB versions:
+
+```text
+wearos-windows-bridge.bat --install "C:\project\app-debug.apk" --profile DEV --adb "C:\Users\YOUR_USER\AppData\Local\Android\Sdk\platform-tools\adb.exe" --json
+```
+
+For a persistent selection, set the Windows user environment variable `WEAROS_BRIDGE_ADB` to the full SDK ADB path and restart Studio/the bridge to pick it up. Selection order is `--adb`, `WEAROS_BRIDGE_ADB`, configured scrcpy folder, then PATH. An invalid explicit selection fails rather than silently falling back. scrcpy receives this same executable through its `ADB` environment variable.
+
+### Result contract for scripts and agents
+
+Exit code **0** means the operation succeeded; **1** means invalid arguments, timeout, or operation failure. An install requires both a zero ADB exit code and an explicit `Success` result. Bulk installations continue through all targets, then fail overall if any target failed.
+
+With `--json`, the stable version-1 envelope is:
+
+```json
+{
+  "schemaVersion": 1,
+  "command": "--screenshot",
+  "success": true,
+  "serial": "192.168.1.33:5555",
+  "data": { "path": "C:\\project\\watch.png" },
+  "messages": [],
+  "error": null
+}
+```
+
+On failure, `success` is `false` and `error` contains the reason. `serial` is null for untargeted operations or failures before target resolution. `data` is null for install/connect/mirror/recovery, contains `path` for screenshots, and contains native command `output` for screen/app controls. Messages contain human-readable progress and native diagnostics rather than extra stdout text.
+
+`--status-json` without `--json` retains its original bare status object. With `--json`, that object is under `data`. `watchConnected` describes the exact saved active endpoint in the authorized `device` state. When `--serial` or `--profile` is supplied, status also includes `selectedSerial` and `selectedConnected` for that per-call target; the saved active profile remains unchanged. A successful status query does not imply the watch is connected: inspect those fields.
+
+Agents should discover commands using `--automation-help`, use `--json` and an explicit target for device actions, check both exit code and `success`, and never invoke server recovery automatically.
+
+### Android Studio External Tools
+
+In **Settings > Tools > External Tools**, add an install tool:
+
+- **Program:** `C:\Windows\System32\cmd.exe`
+- **Arguments:** `/d /c ""C:\tools\wearos-windows-bridge\wearos-windows-bridge.bat" --install "$ProjectFileDir$\app\build\outputs\apk\debug\app-debug.apk" --profile DEV --non-interactive --json"`
+- **Working directory:** `$ProjectFileDir$`
+
+Adjust the launcher path, module name, build variant, and profile for your project. Build the APK first; an External Tool invocation alone does not build it.
+
+For a screenshot tool, use the same program/working directory and these arguments:
+
+```text
+/d /c ""C:\tools\wearos-windows-bridge\wearos-windows-bridge.bat" --screenshot "$ProjectFileDir$\watch.png" --profile DEV --json"
+```
 
 ## Troubleshooting
 
@@ -201,7 +300,7 @@ If ADB reports the watch as `unauthorized`, confirm the **Allow debugging?** pro
 
 ### "adb server is out of date" or devices behave inconsistently
 
-If another program that bundles its own `adb.exe` is also installed (for example Android Studio), it can start a conflicting ADB server on the same port. Close other ADB-based tools and retry. If pairing fails with a protocol-fault error, the bridge attempts ADB recovery; reopen **Pair new device** on the watch for a fresh code and port, then retry **2. Pair Watch via Wi-Fi**.
+Different bundled ADB versions can conflict on the same server port. Configure `WEAROS_BRIDGE_ADB` or `--adb` to use Studio's SDK executable, so the bridge and scrcpy use the same version. If pairing fails with a protocol-fault error, reopen **Pair new device** on the watch for a fresh code and port and retry. Only if the shared server really needs restarting, invoke `wearos-windows-bridge.bat --recover-adb`, understanding that this interrupts Studio's debugger, Logcat, and other ADB clients.
 
 ### Text entry through scrcpy does not save
 
